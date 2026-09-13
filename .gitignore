@@ -39,3 +39,8 @@ yarn-error.log
 # System files
 .DS_Store
 Thumbs.db
+
+# Agent instructions and local-only docs — kept on disk, never pushed
+AGENTS.md
+CLAUDE.md
+README.local.md

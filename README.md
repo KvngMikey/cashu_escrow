@@ -9,48 +9,6 @@ locktime expiry or on resolution, freezes on dispute, and resolves explicitly.
 It speaks pure Pontmore on the wire: kinds 30360/30361 for identity, 7300–7304
 plus 30362 for the swap lifecycle, and NIP-59 Gift Wrap for the private lane.
 
-> **Status: pre-MVP.** Milestone 1 (scaffold + tooling) only. No custody code
-> has been written yet. Do not point this at real sats.
-
-## How custody works
-
-A buyer locks ecash to the operator's public key with a locktime and their own
-refund key. The mint — not this software — enforces the lock:
-
-- **before locktime**, only the operator key can spend the proofs;
-- **after locktime**, only the buyer's refund key can.
-
-The operator never swaps the proofs on receipt; it holds them unchanged. That
-means a crashed, compromised, or simply absent operator cannot make the funds
-disappear — the buyer recovers them at locktime without anyone's cooperation.
-
-There are two refund paths, both explicit:
-
-| Path          | When                                     | Who acts                                                                                                      |
-| ------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Self-recovery | locktime has passed                      | buyer spends with the refund key; operator publishes the transition and returns the original token            |
-| Re-lock swap  | before locktime, on cancel or resolution | operator swaps the proofs into outputs locked to the buyer's pubkey with no locktime, and sends the new token |
-
-## Custody invariants
-
-These are the contract. Nothing in this repository may violate them.
-
-- **I1 — Hold, don't swap.** Buyer proofs are verified and held unchanged.
-- **I2 — Check state before acting.** Every custody action is preceded by a
-  NUT-07 proof-state check and is idempotent, keyed by `swap_id`.
-- **I3 — Release has a deadline.** Release runs only inside
-  `[now, locktime − RELEASE_SAFETY_MARGIN_SECONDS]`. A missed window is a
-  refund, never a loss.
-- **I4 — Two refund paths, both explicit.** As tabled above.
-- **I5 — Exact accounting.** `locked_amount = agent_payout + operator_fee +
-mint_fees`, in one pure function, with no silent rounding.
-- **I6 — Persist before you promise.** Custody material is written to the
-  encrypted store before the `funded` transition is published. Never logged,
-  never in an error message.
-- **I7 — Disputes freeze.** A disputed swap never auto-releases.
-- **I8 — Custody is trigger-agnostic.** The engine exposes verify / hold /
-  release / refund / relockRefund. Release _policy_ lives in trigger adapters.
-
 ## Setup
 
 Requires Node 22 (see `.nvmrc`).
@@ -102,7 +60,7 @@ See `.env.example`. Two settings deserve a note:
 - **`FEES_ENABLED`** — set `false` to run fee-free. `OPERATOR_FEE_BPS` is
   ignored when it is false, and the published `pricing_policy` says so.
 - **`RELEASE_SAFETY_MARGIN_SECONDS`** — how far ahead of locktime the release
-  window closes. Inside the margin the swap is routed to refund (I3).
+  window closes. Inside the margin the swap is routed to refund.
 
 ## References
 

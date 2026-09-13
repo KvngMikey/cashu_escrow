@@ -67,7 +67,7 @@ run_check() {
   fi
 }
 
-run_check "lint-staged (eslint + prettier + stylelint on staged files)" \
+run_check "lint-staged (eslint + prettier on staged files)" \
   npx --no lint-staged
 
 run_check "eslint" \

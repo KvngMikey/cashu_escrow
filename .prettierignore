@@ -1,0 +1,32 @@
+# Compiled output
+/dist
+/tmp
+/out-tsc
+/coverage
+
+# Dependencies
+/node_modules
+
+# Custody store + local runtime state — never formatted, never read
+/data
+
+# Lockfiles
+package-lock.json
+
+# Logs
+*.log
+npm-debug.log
+yarn-error.log
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+*.launch
+.settings/
+*.sublime-workspace
+.history/*
+
+# System files
+.DS_Store
+Thumbs.db

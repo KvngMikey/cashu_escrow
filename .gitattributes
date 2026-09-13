@@ -1,0 +1,18 @@
+# Normalize line endings for all files checked in to Git
+* text=auto
+
+# Force LF for shell scripts (always — CRLF breaks sh/bash on macOS/Linux)
+*.sh text eol=lf
+.husky/* text eol=lf
+
+# Force LF for source files
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+
+# Binaries — no line-ending conversion
+*.png binary
+*.jpg binary
+*.ico binary
+*.enc binary

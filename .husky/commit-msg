@@ -1,0 +1,23 @@
+# Commit hygiene (global rule 3): conventional commits, and NEVER a co-author
+# trailer on this project.
+MSG_FILE=$1
+
+if grep -qiE '^\s*co-authored-by:' "$MSG_FILE"; then
+  echo ""
+  echo "❌ Co-Authored-By trailer found in the commit message."
+  echo "   This project never carries co-author trailers. Remove it and commit again."
+  echo ""
+  exit 1
+fi
+
+SUBJECT=$(grep -vE '^\s*#' "$MSG_FILE" | sed '/^\s*$/d' | head -1)
+if ! echo "$SUBJECT" | grep -qE '^(feat|fix|test|docs|chore|refactor|perf|build|ci|revert)(\([a-z0-9._-]+\))?!?: .+'; then
+  echo ""
+  echo "❌ Commit message is not a conventional commit."
+  echo "   Got:      $SUBJECT"
+  echo "   Expected: feat: <plain description>  (also fix/test/docs/chore/refactor/perf/build/ci/revert)"
+  echo ""
+  exit 1
+fi
+
+exit 0

@@ -66,10 +66,6 @@ See `.env.example`. Two settings deserve a note:
 
 - **Spec:** https://github.com/pontmore/protocol — PIP-00..03; `cashu_escrow`
   is merged into PIP-01.
-- **Client counterpart:** https://github.com/MrNyamu/Pontswap — state machine
-  and schema shapes ported here, credited in file headers.
-- **Test discipline:** https://github.com/comwanga/pactagent — synthetic keys,
-  in-memory relay, isolated signer, allowlisted public fields.
 - **Cashu client:** [@cashu/cashu-ts](https://github.com/cashubtc/cashu-ts).
   Mint software: [Nutshell](https://github.com/cashubtc/nutshell).
 

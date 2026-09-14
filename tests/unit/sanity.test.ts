@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ESCROW_SUBTYPE, NETWORKS } from '../../src/index.js';
+import { ESCROW_SUBTYPE, NETWORKS } from '../../src/index.ts';
 
 // Toolchain sanity: proves TypeScript, nodenext ESM resolution and vitest are
 // wired together before any custody code depends on them.

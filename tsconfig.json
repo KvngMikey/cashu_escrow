@@ -1,12 +1,17 @@
 {
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
     "target": "es2022",
     "lib": ["es2023"],
+    "types": ["node"],
+
+    // Relative imports carry the `.ts` extension. `rewriteRelativeImportExtensions`
+    // turns them into `.js` on emit, so the compiled output is valid Node ESM
+    // and no bundler is needed.
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "noEmit": true,
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -19,11 +24,7 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
 
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
     "skipLibCheck": true
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src", "scripts", "tests", "*.config.ts"]
 }

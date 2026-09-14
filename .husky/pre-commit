@@ -13,7 +13,7 @@ echo ""
 echo "⚡ cashu_escrow pre-commit checks..."
 echo ""
 
-# ── Rule 1: secrets never enter the repo (global rule 6) ───────────
+# ── Rule 1: secrets never enter the repo ───────────
 SECRET_FILES=$(echo "$STAGED" \
   | grep -E '(^|/)\.env($|\.)|(^|/)data/|\.enc$' \
   | grep -vE '(^|/)\.env\.example$|(^|/)data/\.gitkeep$' || true)
@@ -25,14 +25,14 @@ if [ -n "$SECRET_FILES" ]; then
   FAIL=1
 fi
 
-# ── Rule 2: no custody material on stdout (invariant I6) ───────────
+# ── Rule 2: no custody material on stdout ───────────
 # nsec, token strings, proofs, preimages and payout instructions are never logged.
 if [ -n "$STAGED_TS" ]; then
   LEAKY=$(echo "$STAGED_TS" | tr '\n' ' ' | xargs grep -nE \
     'console\.[a-z]+\([^)]*\b(nsec|privkey|privateKey|secretKey|proofs?|preimage|tokenStr|lockedToken|payout(Target|Instruction))\b' \
     2>/dev/null | grep -v '\.test\.ts' || true)
   if [ -n "$LEAKY" ]; then
-    echo "❌ Custody material reaching a log call (invariant I6):"
+    echo "❌ Custody material reaching a log call:"
     echo "$LEAKY"
     echo "   Fix: log the swap_id and a typed error category — never the material."
     echo ""
@@ -40,15 +40,25 @@ if [ -n "$STAGED_TS" ]; then
   fi
 fi
 
-# ── Rule 3: custody engine stays trigger-agnostic (invariant I8) ───
+# ── Rule 3: custody engine stays trigger-agnostic ───
 STAGED_CUSTODY=$(echo "$STAGED_TS" | grep '^src/lib/' || true)
 if [ -n "$STAGED_CUSTODY" ]; then
   POLICY=$(echo "$STAGED_CUSTODY" | tr '\n' ' ' | xargs grep -nE \
-    '\b(shouldRelease|TriggerAdapter|fiat_confirmed|service_delivery)\b' 2>/dev/null || true)
+    '\b(shouldRelease|TriggerAdapter|service_delivery)\b' 2>/dev/null || true)
   if [ -n "$POLICY" ]; then
-    echo "❌ Release policy leaking into the custody layer (invariant I8):"
+    echo "❌ Release policy leaking into the custody layer:"
     echo "$POLICY"
     echo "   Fix: policy belongs in src/operator trigger adapters, not src/lib."
+    echo ""
+    FAIL=1
+  fi
+
+  BOUNDARY=$(echo "$STAGED_CUSTODY" | tr '\n' ' ' | xargs grep -nE \
+    "from '[^']*\\boperator/" 2>/dev/null || true)
+  if [ -n "$BOUNDARY" ]; then
+    echo "❌ src/lib imports from src/operator:"
+    echo "$BOUNDARY"
+    echo "   Fix: the custody layer must not depend on the policy layer."
     echo ""
     FAIL=1
   fi

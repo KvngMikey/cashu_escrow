@@ -4,13 +4,13 @@
   "description": "Cashu ecash escrow operator for Pontmore (PIP-01 cashu_escrow)",
   "license": "MIT",
   "type": "module",
+  "main": "dist/index.js",
   "engines": {
     "node": ">=22"
   },
-  "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.check.json",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",
     "test:coverage": "vitest run --project unit --coverage",
@@ -38,6 +38,7 @@
     "eslint-plugin-prettier": "^5.5.6",
     "eslint-plugin-unused-imports": "^4.4.1",
     "husky": "^9.1.7",
+    "jiti": "^2.7.0",
     "lint-staged": "^17.5.1",
     "prettier": "^3.9.6",
     "tsx": "^4.23.13",

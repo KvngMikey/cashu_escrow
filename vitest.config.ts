@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 // Two projects, selected by name. The default run is unit-only: no network,
-// no Docker (global rule 7). The integration project is opt-in and expects a
+// no Docker. The integration project is opt-in and expects a
 // local relay and a local Nutshell mint.
 export default defineConfig({
   test: {
@@ -11,6 +11,8 @@ export default defineConfig({
           name: 'unit',
           include: ['tests/unit/**/*.test.ts'],
           environment: 'node',
+          // Enforces "no network in the unit suite" mechanically.
+          setupFiles: ['tests/unit/setup.ts'],
         },
       },
       {

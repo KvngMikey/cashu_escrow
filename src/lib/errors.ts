@@ -10,7 +10,7 @@
  * error) is the usual way a token string ends up in a log line.
  */
 
-export const ERROR_CATEGORIES: readonly string[] = [
+export const ERROR_CATEGORIES = [
   /** Operator configuration is unusable: bad nsec, bad relay URL, bad env. */
   'config_invalid',
   /** A JSON payload failed its schema. */

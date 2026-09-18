@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { NostrEvent } from 'nostr-tools/pure';
 
 import { isEscrowError } from '../../../src/lib/errors.ts';
-import { KIND_NOTE, KIND_TRANSITION } from '../../../src/lib/pontmore/kinds.ts';
+import {
+  KIND_COORDINATION_ACTION,
+  KIND_COORDINATION_ROOT,
+} from '../../../src/lib/pontmore/kinds.ts';
 import { createRelayClient } from '../../../src/lib/pontmore/relay.ts';
 import { createSigner } from '../../../src/lib/pontmore/signer.ts';
 import { createFakeRelayPool } from '../support/fake-relay-pool.ts';
@@ -13,7 +16,7 @@ const signer = createSigner(OPERATOR.nsec);
 
 function note(swapId: string, createdAt: number): NostrEvent {
   return signer.sign({
-    kind: KIND_NOTE,
+    kind: KIND_COORDINATION_ACTION,
     created_at: createdAt,
     tags: [['d', swapId]],
     content: JSON.stringify({ swap_id: swapId, text: 'note' }),
@@ -94,7 +97,7 @@ describe('query', () => {
     // Two overlapping filters: the same events come back from both.
     const events = await client.query([
       { '#d': ['swap-1'] },
-      { kinds: [KIND_NOTE] },
+      { kinds: [KIND_COORDINATION_ACTION] },
     ]);
 
     expect(events.map((event) => event.id)).toEqual([older.id, newer.id]);
@@ -112,7 +115,7 @@ describe('query', () => {
       content: 'rewritten by the relay',
     });
 
-    const events = await client.query([{ kinds: [KIND_NOTE] }]);
+    const events = await client.query([{ kinds: [KIND_COORDINATION_ACTION] }]);
     expect(events.map((event) => event.content)).toEqual([honest.content]);
   });
 
@@ -125,7 +128,9 @@ describe('query', () => {
       },
     });
 
-    await expect(client.query([{ kinds: [KIND_NOTE] }])).resolves.toEqual([]);
+    await expect(
+      client.query([{ kinds: [KIND_COORDINATION_ACTION] }])
+    ).resolves.toEqual([]);
   });
 });
 
@@ -157,7 +162,7 @@ describe('subscribe', () => {
 
     const seen: string[] = [];
     client.subscribe(
-      [{ '#d': ['swap-1'] }, { kinds: [KIND_NOTE] }],
+      [{ '#d': ['swap-1'] }, { kinds: [KIND_COORDINATION_ACTION] }],
       (event) => {
         seen.push(event.id);
       }
@@ -173,9 +178,12 @@ describe('subscribe', () => {
     const client = createRelayClient(RELAYS, { pool });
 
     const seen: NostrEvent[] = [];
-    client.subscribe([{ kinds: [KIND_TRANSITION, KIND_NOTE] }], (event) => {
-      seen.push(event);
-    });
+    client.subscribe(
+      [{ kinds: [KIND_COORDINATION_ROOT, KIND_COORDINATION_ACTION] }],
+      (event) => {
+        seen.push(event);
+      }
+    );
 
     const honest = note('swap-1', 1_800_000_000);
     pool.seed({ ...honest, content: 'rewritten in flight' });

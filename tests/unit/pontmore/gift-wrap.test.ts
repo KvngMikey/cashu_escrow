@@ -14,8 +14,9 @@ import {
   KIND_GIFT_WRAP,
   KIND_RUMOR,
   KIND_SEAL,
-  PrivateMessage,
 } from '../../../src/lib/pontmore/kinds.ts';
+import { isEscrowError } from '../../../src/lib/errors.ts';
+import { PrivatePayload } from '../../../src/lib/private/payload.ts';
 import { createSigner } from '../../../src/lib/pontmore/signer.ts';
 import type { EventSigner } from '../../../src/lib/pontmore/signer.ts';
 import { CUSTOMER, OPERATOR, STRANGER } from '../support/keys.ts';
@@ -24,16 +25,15 @@ const operator = createSigner(OPERATOR.nsec);
 const customer = createSigner(CUSTOMER.nsec);
 const stranger = createSigner(STRANGER.nsec);
 
-const SWAP_ID = 'b3c1f6d2-0f1e-4a6b-9c2d-7e5a1b3c4d5e';
+const ROOT_ID = 'a'.repeat(64);
 const fundingMessage = {
   version: 1 as const,
-  type: 'escrow_funding' as const,
-  swap_id: SWAP_ID,
-  token: `cashuB${'o'.repeat(64)}`,
-  mint_url: 'http://localhost:3338',
-  amount_sats: 100_000,
-  locktime: 1_800_003_600,
-  refund_pubkey: CUSTOMER.pubkey,
+  profile: 'pontmore/swap@1',
+  root: ROOT_ID,
+  participants: [CUSTOMER.pubkey, OPERATOR.pubkey],
+  type: 'escrow_funding',
+  commitment_algorithm: 'sha256-bytes@1',
+  payload: JSON.stringify({ token: `cashuB${'o'.repeat(64)}` }),
 };
 
 /**
@@ -102,6 +102,13 @@ function wrapAroundSeal(sealJson: string): NostrEvent {
 }
 
 describe('gift wrap round trip', () => {
+  it('round trips JSON null without treating it as a parse error', () => {
+    const result = unwrapPrivateMessage(
+      customer,
+      wrapPrivateMessage(operator, customer.pubkey, null)
+    );
+    expect(result.ok && result.envelope.payload).toBeNull();
+  });
   it('delivers the payload and authenticates the sender', () => {
     const wrap = wrapPrivateMessage(operator, customer.pubkey, {
       hello: 'world',
@@ -121,7 +128,7 @@ describe('gift wrap round trip', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const parsed = PrivateMessage.safeParse(result.envelope.payload);
+    const parsed = PrivatePayload.safeParse(result.envelope.payload);
     expect(parsed.success && parsed.data.type).toBe('escrow_funding');
     expect(result.envelope.senderPubkey).toBe(CUSTOMER.pubkey);
   });
@@ -136,7 +143,7 @@ describe('gift wrap round trip', () => {
     expect(wrap.pubkey).not.toBe(OPERATOR.pubkey);
 
     const surface = JSON.stringify(wrap);
-    expect(surface).not.toContain(SWAP_ID);
+    expect(surface).not.toContain(ROOT_ID);
     expect(surface).not.toContain('cashuB');
     expect(surface).not.toContain('escrow_funding');
   });
@@ -148,6 +155,29 @@ describe('gift wrap round trip', () => {
 });
 
 describe('gift wrap rejection', () => {
+  it('redacts JSON serialization failures, including private object keys', () => {
+    const secretKeyName = 'synthetic-private-field';
+    const cycle: Record<string, unknown> = {};
+    cycle[secretKeyName] = cycle;
+    for (const value of [cycle, undefined, 1n]) {
+      try {
+        wrapPrivateMessage(operator, customer.pubkey, value);
+        throw new Error('expected invalid JSON');
+      } catch (error) {
+        expect(isEscrowError(error) && error.category).toBe(
+          'private_lane_invalid'
+        );
+        expect(String(error)).not.toContain(secretKeyName);
+      }
+    }
+  });
+
+  it('verifies the outer wrap before decrypting', () => {
+    const wrap = wrapPrivateMessage(operator, customer.pubkey, null);
+    expect(
+      unwrapPrivateMessage(customer, { ...wrap, sig: '0'.repeat(128) })
+    ).toEqual({ ok: false, reason: 'forged_wrap' });
+  });
   it('will not open a wrap addressed to someone else', () => {
     const wrap = wrapPrivateMessage(operator, customer.pubkey, { a: 1 });
     expect(unwrapPrivateMessage(stranger, wrap)).toEqual({

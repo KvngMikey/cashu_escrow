@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "vectors:build": "node --import tsx scripts/build-vectors.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@noble/curves": "^2.4.0",
     "@types/node": "^26.5.1",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",

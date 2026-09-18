@@ -1,6 +1,9 @@
-import { ESCROW_TYPE_CASHU } from './lib/pontmore/kinds.ts';
+/** PIP-01 `escrow_type` this operator publishes. */
+export const ESCROW_TYPE = 'cashu_escrow';
 
-/** The canonical Pontmore PIP-01 escrow subtype this operator implements. */
-export const ESCROW_SUBTYPE = ESCROW_TYPE_CASHU;
+/** Networks this operator settles across. */
+export const NETWORKS = ['cashu', 'lightning'] as const;
+export type Network = (typeof NETWORKS)[number];
 
-export { NETWORKS, type Network } from './lib/pontmore/kinds.ts';
+/** The only coordination profile this operator supports today. */
+export { PROFILE_ID, swapV1 } from './lib/profiles/swap-v1.ts';

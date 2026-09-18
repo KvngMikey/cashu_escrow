@@ -20,7 +20,7 @@
  *
  * This module is transport. It moves an opaque payload and authenticates the
  * sender; it does not know what a payload means. Callers validate what comes
- * back with `PrivateMessage` from kinds.ts.
+ * back with the private-lane envelope and the selected service schema.
  */
 
 import { z } from 'zod';
@@ -32,6 +32,7 @@ import {
   type NostrEvent,
 } from 'nostr-tools/pure';
 
+import { EscrowError } from '../errors.ts';
 import { assertHexPubkey, nowSeconds } from '../primitives.ts';
 import { KIND_GIFT_WRAP, KIND_RUMOR, KIND_SEAL } from './kinds.ts';
 import type { EventSigner } from './signer.ts';
@@ -83,6 +84,7 @@ export type PrivateEnvelope = {
  */
 export type UnwrapFailure =
   | 'not_a_gift_wrap'
+  | 'forged_wrap'
   | 'oversized'
   | 'undecryptable'
   | 'malformed_seal'
@@ -117,7 +119,7 @@ export function wrapPrivateMessage(
     created_at: nowSeconds(),
     kind: KIND_RUMOR,
     tags: [['p', recipient]],
-    content: JSON.stringify(payload),
+    content: serializePayload(payload),
   };
   const rumor = { ...rumorBase, id: getEventHash(rumorBase) };
 
@@ -155,10 +157,15 @@ export function unwrapPrivateMessage(
   if (wrap.content.length > MAX_LAYER_CHARS)
     return { ok: false, reason: 'oversized' };
 
+  if (!verifySignedEvent(wrap)) return { ok: false, reason: 'forged_wrap' };
+
   const sealJson = decryptOrNull(signer, wrap.pubkey, wrap.content);
   if (sealJson === null) return { ok: false, reason: 'undecryptable' };
 
-  const seal = SignedEventShape.safeParse(parseJsonOrNull(sealJson));
+  const sealJsonValue = parseJson(sealJson);
+  const seal = SignedEventShape.safeParse(
+    sealJsonValue.ok ? sealJsonValue.value : undefined
+  );
   if (!seal.success || seal.data.kind !== KIND_SEAL) {
     return { ok: false, reason: 'malformed_seal' };
   }
@@ -171,7 +178,10 @@ export function unwrapPrivateMessage(
   const rumorJson = decryptOrNull(signer, seal.data.pubkey, seal.data.content);
   if (rumorJson === null) return { ok: false, reason: 'undecryptable' };
 
-  const rumor = RumorShape.safeParse(parseJsonOrNull(rumorJson));
+  const rumorJsonValue = parseJson(rumorJson);
+  const rumor = RumorShape.safeParse(
+    rumorJsonValue.ok ? rumorJsonValue.value : undefined
+  );
   if (!rumor.success || rumor.data.kind !== KIND_RUMOR) {
     return { ok: false, reason: 'malformed_rumor' };
   }
@@ -187,14 +197,16 @@ export function unwrapPrivateMessage(
     return { ok: false, reason: 'sender_mismatch' };
   }
 
-  const payload = parseJsonOrNull(rumor.data.content);
-  if (payload === null) return { ok: false, reason: 'malformed_payload' };
+  // Tagged, so a payload that is literally `null` is told apart from one that
+  // did not parse.
+  const payload = parseJson(rumor.data.content);
+  if (!payload.ok) return { ok: false, reason: 'malformed_payload' };
 
   return {
     ok: true,
     envelope: {
       senderPubkey: seal.data.pubkey,
-      payload,
+      payload: payload.value,
       sentAt: rumor.data.created_at,
     },
   };
@@ -212,10 +224,31 @@ function decryptOrNull(
   }
 }
 
-function parseJsonOrNull(raw: string): unknown {
+type JsonResult = { ok: true; value: unknown } | { ok: false };
+
+function parseJson(raw: string): JsonResult {
   try {
-    return JSON.parse(raw);
+    return { ok: true, value: JSON.parse(raw) };
   } catch {
-    return null;
+    return { ok: false };
   }
+}
+
+/** JSON failures may name private object keys, so never expose native errors. */
+function serializePayload(payload: unknown): string {
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(payload);
+  } catch {
+    throw new EscrowError(
+      'private_lane_invalid',
+      'private payload is not serializable JSON'
+    );
+  }
+  if (json === undefined)
+    throw new EscrowError(
+      'private_lane_invalid',
+      'private payload is not serializable JSON'
+    );
+  return json;
 }

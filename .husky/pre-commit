@@ -40,25 +40,30 @@ if [ -n "$STAGED_TS" ]; then
   fi
 fi
 
-# ── Rule 3: custody engine stays trigger-agnostic ───
+# ── Rule 3: the kernel stays profile-agnostic ───────
 STAGED_CUSTODY=$(echo "$STAGED_TS" | grep '^src/lib/' || true)
 if [ -n "$STAGED_CUSTODY" ]; then
-  POLICY=$(echo "$STAGED_CUSTODY" | tr '\n' ' ' | xargs grep -nE \
-    '\b(shouldRelease|TriggerAdapter|service_delivery)\b' 2>/dev/null || true)
-  if [ -n "$POLICY" ]; then
-    echo "❌ Release policy leaking into the custody layer:"
-    echo "$POLICY"
-    echo "   Fix: policy belongs in src/operator trigger adapters, not src/lib."
-    echo ""
-    FAIL=1
-  fi
-
+  # The custody layer never depends on the policy layer.
   BOUNDARY=$(echo "$STAGED_CUSTODY" | tr '\n' ' ' | xargs grep -nE \
     "from '[^']*\\boperator/" 2>/dev/null || true)
   if [ -n "$BOUNDARY" ]; then
-    echo "❌ src/lib imports from src/operator:"
+    echo "❌ src/lib imports from src/operator (invariant I8):"
     echo "$BOUNDARY"
     echo "   Fix: the custody layer must not depend on the policy layer."
+    echo ""
+    FAIL=1
+  fi
+fi
+
+STAGED_KERNEL=$(echo "$STAGED_TS" | grep '^src/lib/pontmore/' || true)
+if [ -n "$STAGED_KERNEL" ]; then
+  # The kernel speaks core/* only: no profile import, no profile vocabulary.
+  PROFILE=$(echo "$STAGED_KERNEL" | tr '\n' ' ' | xargs grep -nE \
+    "from '[^']*\\bprofiles/|['\"]swap/" 2>/dev/null || true)
+  if [ -n "$PROFILE" ]; then
+    echo "❌ Profile semantics leaking into the kernel (invariant I8):"
+    echo "$PROFILE"
+    echo "   Fix: terms, roles and profile actions belong in src/lib/profiles."
     echo ""
     FAIL=1
   fi

@@ -45,7 +45,15 @@ export interface EventSigner {
  */
 export function createSigner(nsec: string): EventSigner {
   const secretKey = decodeNsec(nsec);
-  const pubkey = getPublicKey(secretKey);
+  let pubkey: string;
+  try {
+    pubkey = getPublicKey(secretKey);
+  } catch {
+    throw new EscrowError(
+      'config_invalid',
+      'operator nsec contains an invalid secret key'
+    );
+  }
 
   const signer: EventSigner = {
     pubkey,
@@ -99,6 +107,14 @@ function decodeNsec(nsec: string): Uint8Array {
  */
 export function verifySignedEvent(event: NostrEvent): boolean {
   try {
+    if (
+      !Number.isSafeInteger(event.created_at) ||
+      event.created_at < 0 ||
+      !Number.isSafeInteger(event.kind) ||
+      event.kind < 0 ||
+      event.kind > 65535
+    )
+      return false;
     return verifyEvent({
       id: event.id,
       pubkey: event.pubkey,

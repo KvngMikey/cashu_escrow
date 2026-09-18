@@ -23,7 +23,7 @@ import type { Filter } from 'nostr-tools/filter';
 import type { NostrEvent } from 'nostr-tools/pure';
 
 import { EscrowError } from '../errors.ts';
-import { parseUrl } from '../primitives.ts';
+import { parseUrl, redactUrl } from '../primitives.ts';
 import { verifySignedEvent } from './signer.ts';
 
 const DEFAULT_QUERY_TIMEOUT_MS = 5_000;
@@ -185,7 +185,7 @@ function normaliseRelays(relayUrls: readonly string[]): readonly string[] {
     if (protocol !== 'wss:' && protocol !== 'ws:') {
       throw new EscrowError(
         'config_invalid',
-        `relay URL is not a ws(s) URL: ${url}`
+        `relay URL is not a ws(s) URL: ${redactUrl(url)}`
       );
     }
   }

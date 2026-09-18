@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { npubEncode } from 'nostr-tools/nip19';
+import { nsecEncode, npubEncode } from 'nostr-tools/nip19';
 import { verifyEvent } from 'nostr-tools/pure';
 
 import { isEscrowError } from '../../../src/lib/errors.ts';
@@ -7,10 +7,14 @@ import {
   createSigner,
   verifySignedEvent,
 } from '../../../src/lib/pontmore/signer.ts';
-import { KIND_NOTE } from '../../../src/lib/pontmore/kinds.ts';
+import { KIND_COORDINATION_ACTION } from '../../../src/lib/pontmore/kinds.ts';
 import { CUSTOMER, OPERATOR } from '../support/keys.ts';
 
-const note = { kind: KIND_NOTE, tags: [['d', 'swap-1']], content: 'hello' };
+const note = {
+  kind: KIND_COORDINATION_ACTION,
+  tags: [['d', 'swap-1']],
+  content: 'hello',
+};
 
 describe('createSigner', () => {
   it('derives the operator identity from the nsec', () => {
@@ -21,7 +25,7 @@ describe('createSigner', () => {
     const signed = createSigner(OPERATOR.nsec).sign(note);
 
     expect(signed.pubkey).toBe(OPERATOR.pubkey);
-    expect(signed.kind).toBe(KIND_NOTE);
+    expect(signed.kind).toBe(KIND_COORDINATION_ACTION);
     expect(verifyEvent(signed)).toBe(true);
     expect(verifySignedEvent(signed)).toBe(true);
   });
@@ -51,6 +55,14 @@ describe('createSigner', () => {
       false
     );
   });
+
+  it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects a signed invalid timestamp %s',
+    (created_at) => {
+      const event = createSigner(OPERATOR.nsec).sign({ ...note, created_at });
+      expect(verifySignedEvent(event)).toBe(false);
+    }
+  );
 
   it('reports a malformed event as unverified rather than throwing', () => {
     const signed = createSigner(OPERATOR.nsec).sign(note);
@@ -100,6 +112,20 @@ describe('createSigner', () => {
       if (value.length > 0) expect(error.message).not.toContain(value);
     }
   });
+
+  it.each([0, 255])(
+    'reports an invalid nsec scalar as a typed error (%s)',
+    (byte) => {
+      const nsec = nsecEncode(new Uint8Array(32).fill(byte));
+      try {
+        createSigner(nsec);
+        throw new Error('expected invalid key');
+      } catch (error) {
+        expect(isEscrowError(error) && error.category).toBe('config_invalid');
+        expect(String(error)).not.toContain(nsec);
+      }
+    }
+  );
 
   it('never exposes the secret key', () => {
     const signer = createSigner(OPERATOR.nsec);

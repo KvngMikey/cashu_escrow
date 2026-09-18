@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { ESCROW_SUBTYPE, NETWORKS } from '../../src/index.js';
+import { ESCROW_TYPE, NETWORKS, PROFILE_ID } from '../../src/index.ts';
 
-// Toolchain sanity: proves TypeScript, nodenext ESM resolution and vitest are
-// wired together before any custody code depends on them.
 describe('toolchain', () => {
   it('resolves a strict-mode ESM import from src', () => {
-    expect(ESCROW_SUBTYPE).toBe('cashu_escrow');
+    expect(ESCROW_TYPE).toBe('cashu_escrow');
+    expect(PROFILE_ID).toBe('pontmore/swap@1');
   });
 
   it('settles across cashu and lightning', () => {

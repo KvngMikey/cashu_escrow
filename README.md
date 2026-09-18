@@ -1,7 +1,6 @@
 # cashu_escrow
 
-An escrow operator implementing the `cashu_escrow` canonical subtype of
-[Pontmore](https://github.com/pontmore/protocol) PIP-01.
+An experimental standalone Cashu escrow operator for [Pontmore](https://github.com/pontmore/protocol)
 
 It holds buyer-locked Cashu ecash (NUT-11 P2PK with a locktime and a refund
 key), releases inside a bounded window by melting to Lightning, refunds on
@@ -9,18 +8,32 @@ locktime expiry or on resolution, freezes on dispute, and resolves explicitly.
 It speaks pure Pontmore on the wire: kinds 30360/30361 for identity, 7300–7304
 plus 30362 for the swap lifecycle, and NIP-59 Gift Wrap for the private lane.
 
-## Setup
+## Development
 
 Requires Node 22 (see `.nvmrc`).
 
 ```bash
 nvm use
 npm install
-cp .env.example .env   # then fill in OPERATOR_NSEC and MINT_URL
+npm run typecheck
+npm test
+npm run lint
+npm run format
+npm run build
 ```
 
-`.env` is gitignored and must stay that way. So is `data/`, which holds the
-encrypted custody store.
+`npm test` runs local unit tests with synthetic identities and an in-memory relay.
+The integration suite is reserved for local Docker services and currently has no
+cases.
+
+Keep `.env` and runtime custody data out of Git.
+
+## Protocol fixtures
+
+[Vectors](vectors/README.md) are signed example histories with expected results,
+loaded by the unit suite. They exercise settlement, refunds, authorization,
+expiry, forks, and malformed input. Regenerate them with `npm run vectors:build`.
+They are test data, not production events or proof of independent interoperability.
 
 ### Local services
 
@@ -64,10 +77,9 @@ See `.env.example`. Two settings deserve a note:
 
 ## References
 
-- **Spec:** https://github.com/pontmore/protocol — PIP-00..03; `cashu_escrow`
-  is merged into PIP-01.
-- **Cashu client:** [@cashu/cashu-ts](https://github.com/cashubtc/cashu-ts).
-  Mint software: [Nutshell](https://github.com/cashubtc/nutshell).
+- [Pontmore PIP-00, PIP-01, PIP-02 and swap profile](https://github.com/pontmore/protocol)
+- [Cashu client](https://github.com/cashubtc/cashu-ts)
+- [Nutshell mint](https://github.com/cashubtc/nutshell)
 
 ## License
 

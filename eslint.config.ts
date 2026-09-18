@@ -12,13 +12,13 @@ export default tseslint.config(
   js.configs.recommended,
   prettierRecommended,
   {
-    // Type-aware linting applies to TypeScript sources only; the flat config
-    // file itself is plain JS and is not in any tsconfig program.
+    // Type-aware linting, driven by the single tsconfig. This config file is
+    // TypeScript too and is covered by it (`*.config.ts` is in the program).
     files: ['**/*.ts'],
     extends: [tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
-        project: ['./tsconfig.check.json'],
+        project: ['./tsconfig.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },

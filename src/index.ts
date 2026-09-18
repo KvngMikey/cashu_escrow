@@ -1,14 +1,9 @@
-/**
- * cashu_escrow — escrow operator for the `cashu_escrow` canonical subtype of
- * Pontmore PIP-01.
- *
- * Spec: https://github.com/pontmore/protocol
- */
+/** PIP-01 `escrow_type` this operator publishes. */
+export const ESCROW_TYPE = 'cashu_escrow';
 
-/** The canonical Pontmore PIP-01 escrow subtype this operator implements. */
-export const ESCROW_SUBTYPE = 'cashu_escrow';
-
-/** Networks this operator settles across, in the order the descriptor lists them. */
+/** Networks this operator settles across. */
 export const NETWORKS = ['cashu', 'lightning'] as const;
-
 export type Network = (typeof NETWORKS)[number];
+
+/** The only coordination profile this operator supports today. */
+export { PROFILE_ID, swapV1 } from './lib/profiles/swap-v1.ts';

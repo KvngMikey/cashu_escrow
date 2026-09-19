@@ -1,0 +1,232 @@
+{
+  "name": "settle-and-refund-in-one-history",
+  "description": "Settlement and refund are mutually exclusive final outcomes.",
+  "spec": {
+    "commit": "d9a1eb3",
+    "pip02_version": 2,
+    "profile": "pontmore/swap@1"
+  },
+  "descriptor": {
+    "kind": 30361,
+    "created_at": 1800000000,
+    "tags": [
+      ["d", "cashu-main"],
+      ["t", "pontmore-network:cashu"],
+      ["t", "pontmore-network:lightning"]
+    ],
+    "content": "{\"version\":1,\"escrow_type\":\"cashu_escrow\",\"networks\":[\"cashu\",\"lightning\"],\"expires_at\":1800100000,\"service\":{\"schema\":{\"type\":\"openapi\",\"url\":\"https://escrow.example.com/v1/openapi.json\"}}}",
+    "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+    "id": "21fe86adbaef00cd9c923c9fd145b2090a53990d438f518d15f1014adcd33209",
+    "sig": "fbc338183211ce0506af8c45055dd076d21276a9f3a312a4e68025b7fa1d179faadebdf6edaff7bcd2c09965deacc72f66fa6400214dfbf8d42526e50aaf0064"
+  },
+  "root": {
+    "kind": 7300,
+    "created_at": 1800000100,
+    "tags": [
+      [
+        "p",
+        "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+        "",
+        "swap/agent"
+      ],
+      [
+        "p",
+        "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+        "",
+        "swap/customer"
+      ],
+      [
+        "p",
+        "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+        "",
+        "core/escrow"
+      ],
+      [
+        "p",
+        "27a2897a1d182ecb48ddc12278d9816be55ca5a39ed852f271cfaae1fff40406",
+        "",
+        "core/resolver"
+      ],
+      [
+        "e",
+        "21fe86adbaef00cd9c923c9fd145b2090a53990d438f518d15f1014adcd33209",
+        "",
+        "escrow-version"
+      ],
+      [
+        "a",
+        "30361:07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798:cashu-main",
+        "",
+        "escrow"
+      ]
+    ],
+    "content": "{\"version\":2,\"profile\":\"pontmore/swap@1\",\"terms\":{\"direction\":\"btc_to_fiat\",\"fiat\":{\"currency\":\"KES\",\"amount\":\"15000.00\"},\"bitcoin\":{\"amount\":\"100000\",\"unit\":\"sat\",\"network\":\"cashu\"},\"payment_channel\":\"mpesa-ke-kes@1\",\"deadlines\":{\"fiat_pay_by\":1800002000,\"fiat_confirm_by\":1800003000}},\"expires_at\":1800001000}",
+    "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+    "id": "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+    "sig": "22d037980f0ca90dda65a40d5f779e6566687de9292ca0b2b8bcf85e06be1a30907106c26a1996e7468e8c056e6ed8754cdb75547a564fa309702a29a3054a4b"
+  },
+  "actions": [
+    {
+      "kind": 7301,
+      "created_at": 1800000200,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/accept\"}",
+      "pubkey": "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+      "id": "2267c535afe7334f94afa2eafa72b53203aca7d928cd3489b1f9c88ee6ecd0b2",
+      "sig": "fca8a84cd562ad94938dfc0904b72114f63f4f252538648bdeb39d999a5cefd80a24d906562f75e3c5b37bfb3b5289a2c6843439c96ae163e93966349d5c943f"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800000300,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "2267c535afe7334f94afa2eafa72b53203aca7d928cd3489b1f9c88ee6ecd0b2",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/secure\"}",
+      "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+      "id": "db6dd91dc392b6fbc37b87eb5657eb60d53c55b23839b3e23d3202631841116d",
+      "sig": "883cb0f73e4f023b6f5e32a94f1d3e2b8374724ac7b070f032fbf1e2dec4fa551e2194bf5b0cf908ece34a96d4603f45ccb6e98441aa6bfc3b8ec8c6be522bc7"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800001500,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "db6dd91dc392b6fbc37b87eb5657eb60d53c55b23839b3e23d3202631841116d",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"swap/fiat_sent\",\"data\":{\"payment_reference\":\"pay-ref-7f3a91\"}}",
+      "pubkey": "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+      "id": "79eda0901e12773eacf53fe07c0acd0ac129467de43f2058860e5fc7e9fd9a6c",
+      "sig": "42211acb7840fb06a3ae2038fada2cdc0a4af2a59ec64151d38480c78616d3508b3c03d92ac1776071c94c7e5e7d6482a48aefac54f130cf61c1a30d4501d676"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800002500,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "79eda0901e12773eacf53fe07c0acd0ac129467de43f2058860e5fc7e9fd9a6c",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"swap/fiat_confirmed\",\"data\":{\"payment_reference\":\"pay-ref-7f3a91\"}}",
+      "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+      "id": "f195b250e714a897e676dc5a299935c180e5511e641db4ff717f98a866b77ac5",
+      "sig": "6f6b9ac84ddb75503e381a9428bf0b5075c0fb3c6c6ba776b64aecf9f75e896823ddf1e20df8bfef086c3fc447d48efce85cd87834aa67e8aa6bbb30ece79a47"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800002600,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "f195b250e714a897e676dc5a299935c180e5511e641db4ff717f98a866b77ac5",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/authorize_settlement\"}",
+      "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+      "id": "1cdfe8d2b6ae29d7abcc323ebf5fee18f87f33ebc2f9b3400ea40626ec2226c1",
+      "sig": "e14567903f79eafb1aa1f12c76fcadb500d5eb64e18c93cfd56c8546ad6714d3d3903966ec7bf107a975218a3f81a5c578b00fb4fb69ab811a4a980bdca7d895"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800002700,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "1cdfe8d2b6ae29d7abcc323ebf5fee18f87f33ebc2f9b3400ea40626ec2226c1",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/settle\"}",
+      "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+      "id": "a386b6c6c5c8c65c445d56c9d001be72a610c09efe04198dc6b5703803a80d7f",
+      "sig": "5c6ebfea20943e64868406e36be4fba4d4408cd2586b7358750e2ec829c07e72dd5107e9080aec38549ea877ace0d199d5e723e240afcb2203628234f18901f5"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800002710,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "a386b6c6c5c8c65c445d56c9d001be72a610c09efe04198dc6b5703803a80d7f",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/refund\"}",
+      "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+      "id": "1202e23f7a37d971a54eeca32301627b34fd4a6a6406c57d939296a866438514",
+      "sig": "78453dd076bc2cf44aafc99631d3425bf4e3cf4916333976da380507cccee73bac2809a91a3f8f0010ba5fba7dd1ccb48c06ea9185b567cd7b48a2ab41ca8342"
+    }
+  ],
+  "expect": {
+    "root": "valid",
+    "terminal": true,
+    "disputed": false,
+    "forked": null,
+    "rejected": [{ "action_index": 6, "reason": "terminal" }],
+    "state": "settled"
+  }
+}

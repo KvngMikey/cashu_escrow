@@ -1,0 +1,70 @@
+{
+  "name": "missing-resolver-authority",
+  "description": "A profile that permits disputes requires a bound resolver.",
+  "spec": {
+    "commit": "d9a1eb3",
+    "pip02_version": 2,
+    "profile": "pontmore/swap@1"
+  },
+  "descriptor": {
+    "kind": 30361,
+    "created_at": 1800000000,
+    "tags": [
+      ["d", "cashu-main"],
+      ["t", "pontmore-network:cashu"],
+      ["t", "pontmore-network:lightning"]
+    ],
+    "content": "{\"version\":1,\"escrow_type\":\"cashu_escrow\",\"networks\":[\"cashu\",\"lightning\"],\"expires_at\":1800100000,\"service\":{\"schema\":{\"type\":\"openapi\",\"url\":\"https://escrow.example.com/v1/openapi.json\"}}}",
+    "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+    "id": "21fe86adbaef00cd9c923c9fd145b2090a53990d438f518d15f1014adcd33209",
+    "sig": "fbc338183211ce0506af8c45055dd076d21276a9f3a312a4e68025b7fa1d179faadebdf6edaff7bcd2c09965deacc72f66fa6400214dfbf8d42526e50aaf0064"
+  },
+  "root": {
+    "kind": 7300,
+    "created_at": 1800000100,
+    "tags": [
+      [
+        "p",
+        "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+        "",
+        "swap/agent"
+      ],
+      [
+        "p",
+        "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+        "",
+        "swap/customer"
+      ],
+      [
+        "p",
+        "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+        "",
+        "core/escrow"
+      ],
+      [
+        "e",
+        "21fe86adbaef00cd9c923c9fd145b2090a53990d438f518d15f1014adcd33209",
+        "",
+        "escrow-version"
+      ],
+      [
+        "a",
+        "30361:07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798:cashu-main",
+        "",
+        "escrow"
+      ]
+    ],
+    "content": "{\"version\":2,\"profile\":\"pontmore/swap@1\",\"terms\":{\"direction\":\"btc_to_fiat\",\"fiat\":{\"currency\":\"KES\",\"amount\":\"15000.00\"},\"bitcoin\":{\"amount\":\"100000\",\"unit\":\"sat\",\"network\":\"cashu\"},\"payment_channel\":\"mpesa-ke-kes@1\",\"deadlines\":{\"fiat_pay_by\":1800002000,\"fiat_confirm_by\":1800003000}},\"expires_at\":1800001000}",
+    "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+    "id": "149f997c3eaf06d6a6c427010cefe329287de6cc9ba4b602118991edcbbf8806",
+    "sig": "25c1609688488be524c0a4e783575cfc58b6253d590f6fa36d5649ec0f39b3b502292cacc6c7f22836732c24d9c84a24d00304f25d7dfd8bb7b8a5234ac3db50"
+  },
+  "actions": [],
+  "expect": {
+    "root": { "rejected": "resolver_authority" },
+    "terminal": false,
+    "disputed": false,
+    "forked": null,
+    "rejected": []
+  }
+}

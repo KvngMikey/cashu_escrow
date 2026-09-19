@@ -1,0 +1,72 @@
+{
+  "name": "descriptor-missing-d-tag",
+  "description": "The exact descriptor must satisfy PIP-01 discovery requirements.",
+  "spec": {
+    "commit": "d9a1eb3",
+    "pip02_version": 2,
+    "profile": "pontmore/swap@1"
+  },
+  "descriptor": {
+    "kind": 30361,
+    "created_at": 1800000000,
+    "tags": [],
+    "content": "{\"version\":1,\"escrow_type\":\"cashu_escrow\",\"networks\":[\"cashu\",\"lightning\"],\"expires_at\":1800100000,\"service\":{\"schema\":{\"type\":\"openapi\",\"url\":\"https://escrow.example.com/v1/openapi.json\"}}}",
+    "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+    "id": "fba50678b91b6b0219d8fc787aee52b1e54901ad92a3fee4b07d97bea53df676",
+    "sig": "272c8168f9cd637424cc1550328d8a03ecde2c0ccd882e17a450d0715f275225bad9a68de7ec4bbc5ed84631f54e30039cbac3795d19d3c05dd063347c012dc1"
+  },
+  "root": {
+    "kind": 7300,
+    "created_at": 1800000100,
+    "tags": [
+      [
+        "p",
+        "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+        "",
+        "swap/agent"
+      ],
+      [
+        "p",
+        "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+        "",
+        "swap/customer"
+      ],
+      [
+        "p",
+        "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+        "",
+        "core/escrow"
+      ],
+      [
+        "p",
+        "27a2897a1d182ecb48ddc12278d9816be55ca5a39ed852f271cfaae1fff40406",
+        "",
+        "core/resolver"
+      ],
+      [
+        "e",
+        "fba50678b91b6b0219d8fc787aee52b1e54901ad92a3fee4b07d97bea53df676",
+        "",
+        "escrow-version"
+      ],
+      [
+        "a",
+        "30361:07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798:cashu-main",
+        "",
+        "escrow"
+      ]
+    ],
+    "content": "{\"version\":2,\"profile\":\"pontmore/swap@1\",\"terms\":{\"direction\":\"btc_to_fiat\",\"fiat\":{\"currency\":\"KES\",\"amount\":\"15000.00\"},\"bitcoin\":{\"amount\":\"100000\",\"unit\":\"sat\",\"network\":\"cashu\"},\"payment_channel\":\"mpesa-ke-kes@1\",\"deadlines\":{\"fiat_pay_by\":1800002000,\"fiat_confirm_by\":1800003000}},\"expires_at\":1800001000}",
+    "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+    "id": "04fa105e9103c7a0c655f0c13bf9321bda319a1fe1af21689dad0ff155233c8d",
+    "sig": "92e85b340952a8485022c28862f89df3768a0419d41e43060480c1c475178c6f84d35361b65480275df7fb873188342429dfa6b7a67a3a5d19f3b4eab6828048"
+  },
+  "actions": [],
+  "expect": {
+    "root": { "rejected": "descriptor_tags" },
+    "terminal": false,
+    "disputed": false,
+    "forked": null,
+    "rejected": []
+  }
+}

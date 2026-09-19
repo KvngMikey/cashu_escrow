@@ -1,0 +1,210 @@
+{
+  "name": "settle-fiat-to-btc",
+  "description": "Customer sends fiat, agent provides Bitcoin, agent confirms receipt, escrow settles.",
+  "spec": {
+    "commit": "d9a1eb3",
+    "pip02_version": 2,
+    "profile": "pontmore/swap@1"
+  },
+  "descriptor": {
+    "kind": 30361,
+    "created_at": 1800000000,
+    "tags": [
+      ["d", "cashu-main"],
+      ["t", "pontmore-network:cashu"],
+      ["t", "pontmore-network:lightning"]
+    ],
+    "content": "{\"version\":1,\"escrow_type\":\"cashu_escrow\",\"networks\":[\"cashu\",\"lightning\"],\"expires_at\":1800100000,\"service\":{\"schema\":{\"type\":\"openapi\",\"url\":\"https://escrow.example.com/v1/openapi.json\"}}}",
+    "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+    "id": "21fe86adbaef00cd9c923c9fd145b2090a53990d438f518d15f1014adcd33209",
+    "sig": "fbc338183211ce0506af8c45055dd076d21276a9f3a312a4e68025b7fa1d179faadebdf6edaff7bcd2c09965deacc72f66fa6400214dfbf8d42526e50aaf0064"
+  },
+  "root": {
+    "kind": 7300,
+    "created_at": 1800000100,
+    "tags": [
+      [
+        "p",
+        "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+        "",
+        "swap/agent"
+      ],
+      [
+        "p",
+        "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+        "",
+        "swap/customer"
+      ],
+      [
+        "p",
+        "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+        "",
+        "core/escrow"
+      ],
+      [
+        "p",
+        "27a2897a1d182ecb48ddc12278d9816be55ca5a39ed852f271cfaae1fff40406",
+        "",
+        "core/resolver"
+      ],
+      [
+        "e",
+        "21fe86adbaef00cd9c923c9fd145b2090a53990d438f518d15f1014adcd33209",
+        "",
+        "escrow-version"
+      ],
+      [
+        "a",
+        "30361:07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798:cashu-main",
+        "",
+        "escrow"
+      ]
+    ],
+    "content": "{\"version\":2,\"profile\":\"pontmore/swap@1\",\"terms\":{\"direction\":\"fiat_to_btc\",\"fiat\":{\"currency\":\"KES\",\"amount\":\"15000.00\"},\"bitcoin\":{\"amount\":\"100000\",\"unit\":\"sat\",\"network\":\"cashu\"},\"payment_channel\":\"mpesa-ke-kes@1\",\"deadlines\":{\"fiat_pay_by\":1800002000,\"fiat_confirm_by\":1800003000}},\"expires_at\":1800001000}",
+    "pubkey": "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+    "id": "771e1ce0218807253cf4cda76d9e29e528c7786fe74d57d71e020d9c03c9b221",
+    "sig": "a2a551a250f157102285637c8822bb28c50f6a7d383a67d0c8c061b0fa9f5b180c754ec10c2a5a03291688bfd1eeed503fe1eb07d46e85d12bec0d90d6717535"
+  },
+  "actions": [
+    {
+      "kind": 7301,
+      "created_at": 1800000200,
+      "tags": [
+        [
+          "e",
+          "771e1ce0218807253cf4cda76d9e29e528c7786fe74d57d71e020d9c03c9b221",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "771e1ce0218807253cf4cda76d9e29e528c7786fe74d57d71e020d9c03c9b221",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/accept\"}",
+      "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+      "id": "2260460d5aeddb9f39316c3df5024f1ba2163db7cf80caaa74b81ba980270738",
+      "sig": "6edc81fe48e80c486bfd153d02d1e9c860e8a95d9eb533720e9d1997824738c1f18d034f16382226d72cbbb1fa9de66fd12e097af0e7f16a7a1a0f2396de2a82"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800000300,
+      "tags": [
+        [
+          "e",
+          "771e1ce0218807253cf4cda76d9e29e528c7786fe74d57d71e020d9c03c9b221",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "2260460d5aeddb9f39316c3df5024f1ba2163db7cf80caaa74b81ba980270738",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/secure\"}",
+      "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+      "id": "44323006de02ec4067f606f4f5cfbebe2711bdf98ac05a3038dfe36d2ea92f92",
+      "sig": "a97379949596182a515487d266e35d3ca8501eeca7da02abc2cdeb1ea31069fbb8bbf231bd747056a028908b66fb9bb6edee4263a12bda069ee7a0b773216f43"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800001500,
+      "tags": [
+        [
+          "e",
+          "771e1ce0218807253cf4cda76d9e29e528c7786fe74d57d71e020d9c03c9b221",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "44323006de02ec4067f606f4f5cfbebe2711bdf98ac05a3038dfe36d2ea92f92",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"swap/fiat_sent\",\"data\":{\"payment_reference\":\"pay-ref-7f3a91\"}}",
+      "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+      "id": "bc1f41193950ac2793ce2c6ea12c23e6ab61fd68ac09d67f81e7ace5fcae6a06",
+      "sig": "c2fbfccfe1966d24bb8857e74eb40495f9f051afd6857ce2e7cc2b95c78cbeba2e54c5056ba3573b02ad973de47b418d304b1e1502a753d3feec7cb9f8530b81"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800002500,
+      "tags": [
+        [
+          "e",
+          "771e1ce0218807253cf4cda76d9e29e528c7786fe74d57d71e020d9c03c9b221",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "bc1f41193950ac2793ce2c6ea12c23e6ab61fd68ac09d67f81e7ace5fcae6a06",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"swap/fiat_confirmed\",\"data\":{\"payment_reference\":\"pay-ref-7f3a91\"}}",
+      "pubkey": "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+      "id": "167223f048a979359f1e95133bb92a1d416f2c74800dffcf2d9ee0d82b1847fc",
+      "sig": "4e2c2432a552b9e123ff17aa53750a8ccc9ba64ca1343a393ba29d489b6e82f8d0d44ffe36ed144066d36d5395a4349ca16ec67d2a46e333b53a923859f4fe7b"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800002600,
+      "tags": [
+        [
+          "e",
+          "771e1ce0218807253cf4cda76d9e29e528c7786fe74d57d71e020d9c03c9b221",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "167223f048a979359f1e95133bb92a1d416f2c74800dffcf2d9ee0d82b1847fc",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/authorize_settlement\"}",
+      "pubkey": "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+      "id": "cbee17cd27e229810f482f889f03440104e9e3e90eb740248dc040146dbd3d20",
+      "sig": "71ca348dc1c94f607a5139a25c6ac6c5b2e20e1530a92f0aeccac7fca79d0c50919d5eaae31c76f50ba153e65bd249edacc1f23558e9d341286b038c9c463eed"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800002700,
+      "tags": [
+        [
+          "e",
+          "771e1ce0218807253cf4cda76d9e29e528c7786fe74d57d71e020d9c03c9b221",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "cbee17cd27e229810f482f889f03440104e9e3e90eb740248dc040146dbd3d20",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/settle\"}",
+      "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+      "id": "ac8c2859e0943781b582cb7eccee592ad27a97666ad3cab4419fb22e7b5781f9",
+      "sig": "7b809e9642ef92be86d0249c534ab04f699b93c46b759ff2818ad17cbf20dca73aea6708f80309af9c06478721e45cb4727b611a6835e878453fd03b779f866f"
+    }
+  ],
+  "expect": {
+    "root": "valid",
+    "terminal": true,
+    "disputed": false,
+    "forked": null,
+    "rejected": [],
+    "state": "settled"
+  }
+}

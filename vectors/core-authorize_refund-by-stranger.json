@@ -1,0 +1,144 @@
+{
+  "name": "core-authorize_refund-by-stranger",
+  "description": "core/authorize_refund rejects a signer not bound to its authority.",
+  "spec": {
+    "commit": "d9a1eb3",
+    "pip02_version": 2,
+    "profile": "pontmore/swap@1"
+  },
+  "descriptor": {
+    "kind": 30361,
+    "created_at": 1800000000,
+    "tags": [
+      ["d", "cashu-main"],
+      ["t", "pontmore-network:cashu"],
+      ["t", "pontmore-network:lightning"]
+    ],
+    "content": "{\"version\":1,\"escrow_type\":\"cashu_escrow\",\"networks\":[\"cashu\",\"lightning\"],\"expires_at\":1800100000,\"service\":{\"schema\":{\"type\":\"openapi\",\"url\":\"https://escrow.example.com/v1/openapi.json\"}}}",
+    "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+    "id": "21fe86adbaef00cd9c923c9fd145b2090a53990d438f518d15f1014adcd33209",
+    "sig": "fbc338183211ce0506af8c45055dd076d21276a9f3a312a4e68025b7fa1d179faadebdf6edaff7bcd2c09965deacc72f66fa6400214dfbf8d42526e50aaf0064"
+  },
+  "root": {
+    "kind": 7300,
+    "created_at": 1800000100,
+    "tags": [
+      [
+        "p",
+        "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+        "",
+        "swap/agent"
+      ],
+      [
+        "p",
+        "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+        "",
+        "swap/customer"
+      ],
+      [
+        "p",
+        "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+        "",
+        "core/escrow"
+      ],
+      [
+        "p",
+        "27a2897a1d182ecb48ddc12278d9816be55ca5a39ed852f271cfaae1fff40406",
+        "",
+        "core/resolver"
+      ],
+      [
+        "e",
+        "21fe86adbaef00cd9c923c9fd145b2090a53990d438f518d15f1014adcd33209",
+        "",
+        "escrow-version"
+      ],
+      [
+        "a",
+        "30361:07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798:cashu-main",
+        "",
+        "escrow"
+      ]
+    ],
+    "content": "{\"version\":2,\"profile\":\"pontmore/swap@1\",\"terms\":{\"direction\":\"btc_to_fiat\",\"fiat\":{\"currency\":\"KES\",\"amount\":\"15000.00\"},\"bitcoin\":{\"amount\":\"100000\",\"unit\":\"sat\",\"network\":\"cashu\"},\"payment_channel\":\"mpesa-ke-kes@1\",\"deadlines\":{\"fiat_pay_by\":1800002000,\"fiat_confirm_by\":1800003000}},\"expires_at\":1800001000}",
+    "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+    "id": "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+    "sig": "22d037980f0ca90dda65a40d5f779e6566687de9292ca0b2b8bcf85e06be1a30907106c26a1996e7468e8c056e6ed8754cdb75547a564fa309702a29a3054a4b"
+  },
+  "actions": [
+    {
+      "kind": 7301,
+      "created_at": 1800000200,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/accept\"}",
+      "pubkey": "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+      "id": "2267c535afe7334f94afa2eafa72b53203aca7d928cd3489b1f9c88ee6ecd0b2",
+      "sig": "fca8a84cd562ad94938dfc0904b72114f63f4f252538648bdeb39d999a5cefd80a24d906562f75e3c5b37bfb3b5289a2c6843439c96ae163e93966349d5c943f"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800000300,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "2267c535afe7334f94afa2eafa72b53203aca7d928cd3489b1f9c88ee6ecd0b2",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/secure\"}",
+      "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+      "id": "db6dd91dc392b6fbc37b87eb5657eb60d53c55b23839b3e23d3202631841116d",
+      "sig": "883cb0f73e4f023b6f5e32a94f1d3e2b8374724ac7b070f032fbf1e2dec4fa551e2194bf5b0cf908ece34a96d4603f45ccb6e98441aa6bfc3b8ec8c6be522bc7"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800002100,
+      "tags": [
+        [
+          "e",
+          "85cfaf30173413b709bfdbfd9420497e67eb76b18d65285ccb81fc1504fb665e",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "db6dd91dc392b6fbc37b87eb5657eb60d53c55b23839b3e23d3202631841116d",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/authorize_refund\"}",
+      "pubkey": "9c5530e4385ebc41cdaf8257edf9a2baaf8506a4099103211e6ed7382103ed67",
+      "id": "656260119a00db34f30edc48a70f0aa40f7de98136bce05c9f75047043f79279",
+      "sig": "d2fbe1eb8699503b379e3cd0262da49559866b14ab687e4019cdcd3672b1ba8019ca3cbd2439eaef464d85d0875e10fda6a31595e5ed4b1423f53c920b6182bf"
+    }
+  ],
+  "expect": {
+    "root": "valid",
+    "terminal": false,
+    "disputed": false,
+    "forked": null,
+    "rejected": [{ "action_index": 2, "reason": "unauthorized_signer" }],
+    "state": "secured"
+  }
+}

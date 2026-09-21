@@ -1,0 +1,76 @@
+{
+  "name": "descriptor-version-unsupported",
+  "description": "The exact descriptor must satisfy PIP-01 discovery requirements.",
+  "spec": {
+    "commit": "d9a1eb3",
+    "pip02_version": 2,
+    "profile": "pontmore/swap@1"
+  },
+  "descriptor": {
+    "kind": 30361,
+    "created_at": 1800000000,
+    "tags": [
+      ["d", "cashu-main"],
+      ["t", "pontmore-network:cashu"],
+      ["t", "pontmore-network:lightning"]
+    ],
+    "content": "{\"version\":2,\"escrow_type\":\"cashu_escrow\",\"networks\":[\"cashu\",\"lightning\"],\"expires_at\":1800100000,\"service\":{\"schema\":{\"type\":\"openapi\",\"url\":\"https://escrow.example.com/v1/openapi.json\"}}}",
+    "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+    "id": "1c822648cb99eee08c94f18efd46db8dede400541c9c189d5208b43ff03a2896",
+    "sig": "1ca2cd6262818e45f51b6cd25371c45f8114db8e02d2b5594792e8e58674c10fefd75a1bf346dfc58f955178e0f427c87d5441997b92f2b8f5b344b4b6854342"
+  },
+  "root": {
+    "kind": 7300,
+    "created_at": 1800000100,
+    "tags": [
+      [
+        "p",
+        "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+        "",
+        "swap/agent"
+      ],
+      [
+        "p",
+        "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+        "",
+        "swap/customer"
+      ],
+      [
+        "p",
+        "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+        "",
+        "core/escrow"
+      ],
+      [
+        "p",
+        "27a2897a1d182ecb48ddc12278d9816be55ca5a39ed852f271cfaae1fff40406",
+        "",
+        "core/resolver"
+      ],
+      [
+        "e",
+        "1c822648cb99eee08c94f18efd46db8dede400541c9c189d5208b43ff03a2896",
+        "",
+        "escrow-version"
+      ],
+      [
+        "a",
+        "30361:07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798:cashu-main",
+        "",
+        "escrow"
+      ]
+    ],
+    "content": "{\"version\":2,\"profile\":\"pontmore/swap@1\",\"terms\":{\"direction\":\"btc_to_fiat\",\"fiat\":{\"currency\":\"KES\",\"amount\":\"15000.00\"},\"bitcoin\":{\"amount\":\"100000\",\"unit\":\"sat\",\"network\":\"cashu\"},\"payment_channel\":\"mpesa-ke-kes@1\",\"deadlines\":{\"fiat_pay_by\":1800002000,\"fiat_confirm_by\":1800003000}},\"expires_at\":1800001000}",
+    "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+    "id": "b90cbbb7da8486c63e0298dd9b6338c5e99f13e0f4e06bab940dc1aa9cc24813",
+    "sig": "87212addf4b75b02e6b01491e7c1a0d81c3621e5aebe37d2b417e43756fcbe8cbb82772a9b2f21570324d0be92e687faf48cc15101b87ef8d791a66076d86796"
+  },
+  "actions": [],
+  "expect": {
+    "root": { "rejected": "descriptor_content" },
+    "terminal": false,
+    "disputed": false,
+    "forked": null,
+    "rejected": []
+  }
+}

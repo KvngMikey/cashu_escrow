@@ -1,0 +1,122 @@
+{
+  "name": "descriptor-expires-after-acceptance",
+  "description": "Descriptor expiry after acceptance does not stop an accepted coordination.",
+  "spec": {
+    "commit": "d9a1eb3",
+    "pip02_version": 2,
+    "profile": "pontmore/swap@1"
+  },
+  "descriptor": {
+    "kind": 30361,
+    "created_at": 1800000000,
+    "tags": [
+      ["d", "cashu-main"],
+      ["t", "pontmore-network:cashu"],
+      ["t", "pontmore-network:lightning"]
+    ],
+    "content": "{\"version\":1,\"escrow_type\":\"cashu_escrow\",\"networks\":[\"cashu\",\"lightning\"],\"expires_at\":1800000201,\"service\":{\"schema\":{\"type\":\"openapi\",\"url\":\"https://escrow.example.com/v1/openapi.json\"}}}",
+    "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+    "id": "c700ed383e66410f582876babf9d09a7fe0e8351b1bb54bef46ff23c48776674",
+    "sig": "f6bc9e4344df897f55c1e134ecf586ec7332f3a3fcb8ccbab1d58ca274bd4ae247c77e525089fdb2ff154d870297eb21658bc7f9a9dc362cd0f8fb2741403c37"
+  },
+  "root": {
+    "kind": 7300,
+    "created_at": 1800000100,
+    "tags": [
+      [
+        "p",
+        "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+        "",
+        "swap/agent"
+      ],
+      [
+        "p",
+        "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+        "",
+        "swap/customer"
+      ],
+      [
+        "p",
+        "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+        "",
+        "core/escrow"
+      ],
+      [
+        "p",
+        "27a2897a1d182ecb48ddc12278d9816be55ca5a39ed852f271cfaae1fff40406",
+        "",
+        "core/resolver"
+      ],
+      [
+        "e",
+        "c700ed383e66410f582876babf9d09a7fe0e8351b1bb54bef46ff23c48776674",
+        "",
+        "escrow-version"
+      ],
+      [
+        "a",
+        "30361:07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798:cashu-main",
+        "",
+        "escrow"
+      ]
+    ],
+    "content": "{\"version\":2,\"profile\":\"pontmore/swap@1\",\"terms\":{\"direction\":\"btc_to_fiat\",\"fiat\":{\"currency\":\"KES\",\"amount\":\"15000.00\"},\"bitcoin\":{\"amount\":\"100000\",\"unit\":\"sat\",\"network\":\"cashu\"},\"payment_channel\":\"mpesa-ke-kes@1\",\"deadlines\":{\"fiat_pay_by\":1800002000,\"fiat_confirm_by\":1800003000}},\"expires_at\":1800001000}",
+    "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+    "id": "d56aef5685d11af13d4dbb9bd6e54cc3752077b856b903e476acfa9659c6d564",
+    "sig": "04d5c7a1d37fa675d7be9ebb865f136350fbb47e70ed1db20be52bac839a1cf28fcb33683d12765a4e7dc76bfe7eee600fca17013cade8c11f6e2dee1260067c"
+  },
+  "actions": [
+    {
+      "kind": 7301,
+      "created_at": 1800000200,
+      "tags": [
+        [
+          "e",
+          "d56aef5685d11af13d4dbb9bd6e54cc3752077b856b903e476acfa9659c6d564",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "d56aef5685d11af13d4dbb9bd6e54cc3752077b856b903e476acfa9659c6d564",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/accept\"}",
+      "pubkey": "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+      "id": "51e9c95c5421cdd9b9c6154860302c2716f18ee22f30949314bbf4b9758b2d0d",
+      "sig": "c8bd38b4abe4cafbd48ec6badea24bffc680bd1a73781a4e34359aa02ca5ac647caf119db278d42d425c0768f1bd16be5cfdf9acad61c7c64b44686a7e3cb9d8"
+    },
+    {
+      "kind": 7301,
+      "created_at": 1800000300,
+      "tags": [
+        [
+          "e",
+          "d56aef5685d11af13d4dbb9bd6e54cc3752077b856b903e476acfa9659c6d564",
+          "",
+          "root"
+        ],
+        [
+          "e",
+          "51e9c95c5421cdd9b9c6154860302c2716f18ee22f30949314bbf4b9758b2d0d",
+          "",
+          "prev"
+        ]
+      ],
+      "content": "{\"version\":2,\"action\":\"core/secure\"}",
+      "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+      "id": "15f7d94b6c5d1c0594a52e5741da330913705b1c10ac37d177d480a99e6fb33f",
+      "sig": "893f3e4ed1bb7c6a9ba22a5f44f72567abde458dac32dd01dcc09c2253efd7c6a862b90d2adfc3c528d770d6b73abc70953a4358cefafec9ed098973455f1ce7"
+    }
+  ],
+  "expect": {
+    "root": "valid",
+    "terminal": false,
+    "disputed": false,
+    "forked": null,
+    "rejected": [],
+    "state": "secured"
+  }
+}

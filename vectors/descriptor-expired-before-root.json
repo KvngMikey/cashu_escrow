@@ -1,0 +1,76 @@
+{
+  "name": "descriptor-expired-before-root",
+  "description": "A descriptor whose expiry is not later than the root creation is unselectable.",
+  "spec": {
+    "commit": "d9a1eb3",
+    "pip02_version": 2,
+    "profile": "pontmore/swap@1"
+  },
+  "descriptor": {
+    "kind": 30361,
+    "created_at": 1800000000,
+    "tags": [
+      ["d", "cashu-main"],
+      ["t", "pontmore-network:cashu"],
+      ["t", "pontmore-network:lightning"]
+    ],
+    "content": "{\"version\":1,\"escrow_type\":\"cashu_escrow\",\"networks\":[\"cashu\",\"lightning\"],\"expires_at\":1800000100,\"service\":{\"schema\":{\"type\":\"openapi\",\"url\":\"https://escrow.example.com/v1/openapi.json\"}}}",
+    "pubkey": "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+    "id": "7d7687e75c03e80fbfdbeef811c65707f21bec7df9c43af995bd8e379da4a717",
+    "sig": "a827ec4ed6ce3125d9dd854fec1db2d7be6d44717b4deaf6bbb1474aa8b6471aa2aa1794c5015556b154b6869b02c7369c7dbf22f2fbce49e5e60ac78d5c3fc1"
+  },
+  "root": {
+    "kind": 7300,
+    "created_at": 1800000100,
+    "tags": [
+      [
+        "p",
+        "ab5d2e79cfd621b1b027ffb24e2453ed7fb571ba9a841ff0e2473466cabd168d",
+        "",
+        "swap/agent"
+      ],
+      [
+        "p",
+        "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+        "",
+        "swap/customer"
+      ],
+      [
+        "p",
+        "07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798",
+        "",
+        "core/escrow"
+      ],
+      [
+        "p",
+        "27a2897a1d182ecb48ddc12278d9816be55ca5a39ed852f271cfaae1fff40406",
+        "",
+        "core/resolver"
+      ],
+      [
+        "e",
+        "7d7687e75c03e80fbfdbeef811c65707f21bec7df9c43af995bd8e379da4a717",
+        "",
+        "escrow-version"
+      ],
+      [
+        "a",
+        "30361:07031187fb14f770d521389c502321abb0e41e5ab87181d24e8faa0aeed83798:cashu-main",
+        "",
+        "escrow"
+      ]
+    ],
+    "content": "{\"version\":2,\"profile\":\"pontmore/swap@1\",\"terms\":{\"direction\":\"btc_to_fiat\",\"fiat\":{\"currency\":\"KES\",\"amount\":\"15000.00\"},\"bitcoin\":{\"amount\":\"100000\",\"unit\":\"sat\",\"network\":\"cashu\"},\"payment_channel\":\"mpesa-ke-kes@1\",\"deadlines\":{\"fiat_pay_by\":1800002000,\"fiat_confirm_by\":1800003000}},\"expires_at\":1800001000}",
+    "pubkey": "f4f6a5667475b3b52468751c478faad9ea15075c79adeca9f5288311ef176443",
+    "id": "551f82342342c5a8aeb2a67bfddaa0d8744ada0d340f88c916d9e52edb7c5ba5",
+    "sig": "519cd6b7b35de0ca81b9c960038fd42c7a134b261b9936e74d957a0e2f1b8653d84d48aee885ac28d76722cce5edd5b4fc284763e556c5078e689d6d125d4ab7"
+  },
+  "actions": [],
+  "expect": {
+    "root": { "rejected": "descriptor_expired" },
+    "terminal": false,
+    "disputed": false,
+    "forked": null,
+    "rejected": []
+  }
+}

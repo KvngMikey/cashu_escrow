@@ -22,6 +22,15 @@ delivery order. Ordinary unit tests handle API edge cases such as malformed UTF-
 and JSON-null messages. Passing these fixtures does not establish custody safety
 or independent interoperability.
 
+## Scope boundary
+
+These fixtures test the public Pontmore event chain. Their expiry cases cover a
+coordination root's acceptance deadline and an escrow descriptor's selection
+deadline. They do not contain Cashu proofs, NUT-11 locktimes, mint state, or
+private recovery delivery, and locktime expiry never supplies public
+`core/refund` authorization here. Cashu custody and locktime behavior require a
+separate integration suite against a local mint.
+
 ## File format
 
 ```jsonc

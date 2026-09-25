@@ -1,12 +1,13 @@
 # cashu_escrow
 
-An experimental standalone Cashu escrow operator for [Pontmore](https://github.com/pontmore/protocol)
+An experimental standalone Cashu escrow operator for
+[Pontmore](https://github.com/pontmore/protocol).
 
-It holds buyer-locked Cashu ecash (NUT-11 P2PK with a locktime and a refund
-key), releases inside a bounded window by melting to Lightning, refunds on
-locktime expiry or on resolution, freezes on dispute, and resolves explicitly.
-It speaks pure Pontmore on the wire: kinds 30360/30361 for identity, 7300–7304
-plus 30362 for the swap lifecycle, and NIP-59 Gift Wrap for the private lane.
+The current implementation is the Pontmore coordination kernel and its shared
+conformance fixtures. It validates kind 7300 coordination roots, kind 7301
+actions, the `pontmore/swap@1` profile, linked histories, signer authority,
+disputes, forks, and terminal outcomes. Kinds 30360 and 30361 provide agent and
+escrow discovery.
 
 ## Development
 
@@ -32,8 +33,9 @@ Keep `.env` and runtime custody data out of Git.
 
 [Vectors](vectors/README.md) are signed example histories with expected results,
 loaded by the unit suite. They exercise settlement, refunds, authorization,
-expiry, forks, and malformed input. Regenerate them with `npm run vectors:build`.
-They are test data, not production events or proof of independent interoperability.
+coordination and descriptor expiry, forks, and malformed input. Regenerate them
+with `npm run vectors:build`. They are public-chain test data, not Cashu custody
+tests, production events, or proof of independent interoperability.
 
 ### Local services
 
@@ -54,26 +56,26 @@ docker run -d -p 3338:3338 \
 
 ## Scripts
 
-| Command                                              | What it does                                     |
-| ---------------------------------------------------- | ------------------------------------------------ |
-| `npm run typecheck`                                  | `tsc` over `src`, `scripts` and `tests`          |
-| `npm test`                                           | unit tests (vitest) — no network                 |
-| `npm run test:integration`                           | tagged suite against local Docker services       |
-| `npm run lint` / `lint:fix`                          | eslint                                           |
-| `npm run format` / `format:fix`                      | prettier                                         |
-| `npm run build`                                      | compile to `dist/`                               |
-| `npm run operator`                                   | run the operator                                 |
-| `npm run smoke`                                      | end-to-end smoke swap against local relay + mint |
-| `npm run resolve -- --swap <id> --release\|--refund` | resolve a dispute                                |
+| Command                                 | What it does                               |
+| --------------------------------------- | ------------------------------------------ |
+| `npm run typecheck`                     | `tsc` over `src`, `scripts` and `tests`    |
+| `npm test`                              | unit tests (vitest) — no network           |
+| `npm run test:integration`              | tagged suite against local Docker services |
+| `npm run lint` / `npm run lint:fix`     | eslint                                     |
+| `npm run format` / `npm run format:fix` | prettier                                   |
+| `npm run build`                         | compile to `dist/`                         |
+| `npm run vectors:build`                 | regenerate the deterministic JSON fixtures |
 
-## Configuration
+## Fees and expiry
 
-See `.env.example`. Two settings deserve a note:
+PIP-01 has no descriptor-level pricing policy. The planned service will issue a
+signed, expiring quote with exact amounts and bind it through the coordination
+root's `commitments.quote` entry.
 
-- **`FEES_ENABLED`** — set `false` to run fee-free. `OPERATOR_FEE_BPS` is
-  ignored when it is false, and the published `pricing_policy` says so.
-- **`RELEASE_SAFETY_MARGIN_SECONDS`** — how far ahead of locktime the release
-  window closes. Inside the margin the swap is routed to refund.
+Cashu NUT-11 locktime expiry makes the provider's refund-key spending path
+available at the mint. It does not authorize or publish a Pontmore
+`core/refund`. A public refund requires `core/authorize_refund` or a valid
+dispute-resolution effect of `authorize_refund`.
 
 ## References
 

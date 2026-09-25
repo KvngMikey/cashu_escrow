@@ -20,9 +20,6 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
-    "operator": "tsx src/operator/index.ts",
-    "smoke": "tsx scripts/smoke-swap.ts",
-    "resolve": "tsx scripts/resolve.ts",
     "prepare": "husky"
   },
   "dependencies": {

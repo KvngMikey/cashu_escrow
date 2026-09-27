@@ -10,6 +10,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "publish:agent": "node --import tsx scripts/publish-agent.ts",
+    "publish:descriptor": "node --import tsx scripts/publish-descriptor.ts",
+    "publish:profile": "node --import tsx scripts/publish-profile.ts",
     "vectors:build": "node --import tsx scripts/build-vectors.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --project unit",
@@ -24,13 +27,14 @@
   },
   "dependencies": {
     "@cashu/cashu-ts": "^4.10.1",
+    "@noble/curves": "^2.4.0",
     "dotenv": "^17.4.2",
     "nostr-tools": "^2.25.2",
     "zod": "^4.6.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@noble/curves": "^2.4.0",
+    "@scalar/openapi-parser": "^0.29.7",
     "@types/node": "^26.5.1",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",

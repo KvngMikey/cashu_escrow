@@ -3,11 +3,12 @@
 An experimental standalone Cashu escrow operator for
 [Pontmore](https://github.com/pontmore/protocol).
 
-The current implementation is the Pontmore coordination kernel and its shared
-conformance fixtures. It validates kind 7300 coordination roots, kind 7301
-actions, the `pontmore/swap@1` profile, linked histories, signer authority,
-disputes, forks, and terminal outcomes. Kinds 30360 and 30361 provide agent and
-escrow discovery.
+The current implementation includes the Pontmore coordination kernel, shared
+conformance fixtures, discovery-event builders, typed operator configuration,
+signed exact quotes, and the OpenAPI contract for the private service. It
+validates kind 7300 coordination roots, kind 7301 actions, the
+`pontmore/swap@1` profile, linked histories, signer authority, disputes, forks,
+and terminal outcomes. Kinds 30360 and 30361 provide agent and escrow discovery.
 
 ## Development
 
@@ -65,6 +66,13 @@ docker run -d -p 3338:3338 \
 | `npm run format` / `npm run format:fix` | prettier                                   |
 | `npm run build`                         | compile to `dist/`                         |
 | `npm run vectors:build`                 | regenerate the deterministic JSON fixtures |
+| `npm run publish:descriptor`            | publish and verify the escrow descriptor   |
+| `npm run publish:agent`                 | publish and verify the Agent definition    |
+| `npm run publish:profile`               | publish and verify the kind-0 profile      |
+
+The publisher scripts read `.env`; [.env.example](.env.example) lists every
+required value. Each script reads its event back from the configured relay and
+fails if the stored event does not validate.
 
 ## Fees and expiry
 

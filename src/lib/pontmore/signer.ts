@@ -11,6 +11,7 @@
 
 import { decode } from 'nostr-tools/nip19';
 import { decrypt, encrypt, getConversationKey } from 'nostr-tools/nip44';
+import { schnorr } from '@noble/curves/secp256k1.js';
 import {
   finalizeEvent,
   getPublicKey,
@@ -32,6 +33,8 @@ export interface EventSigner {
   /** The operator's public identity, lowercase hex. */
   readonly pubkey: string;
   sign(template: SignTemplate): NostrEvent;
+  /** Sign one already-hashed 32-byte application digest. */
+  signDigest(digest: Uint8Array): string;
   nip44Encrypt(peerPubkey: string, plaintext: string): string;
   nip44Decrypt(peerPubkey: string, ciphertext: string): string;
 }
@@ -43,15 +46,18 @@ export interface EventSigner {
  * indistinguishable from a pubkey at a glance, and nsec is what a human hands
  * over. The key is never echoed, not even on failure.
  */
-export function createSigner(nsec: string): EventSigner {
-  const secretKey = decodeNsec(nsec);
+export function createSigner(
+  nsec: string,
+  identity: 'operator' | 'resolver' = 'operator'
+): EventSigner {
+  const secretKey = decodeNsec(nsec, identity);
   let pubkey: string;
   try {
     pubkey = getPublicKey(secretKey);
   } catch {
     throw new EscrowError(
       'config_invalid',
-      'operator nsec contains an invalid secret key'
+      `${identity} nsec contains an invalid secret key`
     );
   }
 
@@ -70,6 +76,16 @@ export function createSigner(nsec: string): EventSigner {
       );
     },
 
+    signDigest(digest) {
+      if (digest.length !== 32) {
+        throw new EscrowError(
+          'content_invalid',
+          'signing digest must be 32 bytes'
+        );
+      }
+      return Buffer.from(schnorr.sign(digest, secretKey)).toString('hex');
+    },
+
     nip44Encrypt(peerPubkey, plaintext) {
       assertHexPubkey(peerPubkey, 'recipient pubkey');
       return encrypt(plaintext, getConversationKey(secretKey, peerPubkey));
@@ -84,17 +100,23 @@ export function createSigner(nsec: string): EventSigner {
   return Object.freeze(signer);
 }
 
-function decodeNsec(nsec: string): Uint8Array {
+function decodeNsec(
+  nsec: string,
+  identity: 'operator' | 'resolver'
+): Uint8Array {
   let decoded: ReturnType<typeof decode>;
   try {
     decoded = decode(nsec);
   } catch {
-    throw new EscrowError('config_invalid', 'operator key is not a valid nsec');
+    throw new EscrowError(
+      'config_invalid',
+      `${identity} key is not a valid nsec`
+    );
   }
   if (decoded.type !== 'nsec') {
     throw new EscrowError(
       'config_invalid',
-      `operator key is an ${decoded.type}, not an nsec`
+      `${identity} key is an ${decoded.type}, not an nsec`
     );
   }
   return decoded.data;

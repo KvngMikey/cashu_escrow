@@ -134,6 +134,7 @@ describe('createSigner', () => {
     expect(Object.keys(signer)).toEqual([
       'pubkey',
       'sign',
+      'signDigest',
       'nip44Encrypt',
       'nip44Decrypt',
     ]);

@@ -9,3 +9,5 @@ export * from './chain.ts';
 export * from './signer.ts';
 export * from './relay.ts';
 export * from './gift-wrap.ts';
+export * from './descriptor.ts';
+export * from './agent.ts';

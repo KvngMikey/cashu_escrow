@@ -1,0 +1,518 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "cashu_escrow service",
+    "version": "1.0.0",
+    "description": "Authenticated private service for Pontmore pontmore/swap@1 coordinations backed by Cashu NUT-11 P2PK timelocks."
+  },
+  "servers": [{ "url": "https://escrow.example.com" }],
+  "security": [{ "nip98": [] }],
+  "x-pontmore-escrow-type": "cashu_escrow",
+  "x-pontmore-profiles": ["pontmore/swap@1"],
+  "x-pontmore-lock-mechanism": {
+    "type": "p2pk_timelock",
+    "required_nuts": [7, 10, 11]
+  },
+  "x-pontmore-timing": {
+    "min_locktime_seconds": 1800,
+    "release_safety_margin_seconds": 600,
+    "dispute_window_seconds": 3600,
+    "settlement_after_release_margin": "unavailable"
+  },
+  "x-pontmore-payout-types": ["cashu_p2pk", "bolt11"],
+  "x-pontmore-resolution-effects": [
+    "resume",
+    "authorize_settlement",
+    "authorize_refund",
+    "cancel"
+  ],
+  "x-pontmore-quote": {
+    "hash": "sha256",
+    "signature": "bip340-schnorr",
+    "public_key": "the bound core/escrow Nostr pubkey",
+    "canonicalization": "UTF-8 JSON with no whitespace and fields in the listed order",
+    "cashu_p2pk_field_order": [
+      "profile",
+      "terms_digest",
+      "direction",
+      "gross_sats",
+      "operator_fee_sats",
+      "network_cost_sats",
+      "payout_sats",
+      "payout_type",
+      "fee_bearer",
+      "refund_fee_mode",
+      "expires_at"
+    ],
+    "bolt11_field_order": [
+      "profile",
+      "terms_digest",
+      "direction",
+      "gross_sats",
+      "operator_fee_sats",
+      "network_cost_sats",
+      "payout_min_sats",
+      "payout_type",
+      "fee_bearer",
+      "refund_fee_mode",
+      "expires_at"
+    ],
+    "signed_quote_envelope_field_order": ["quote", "pubkey", "signature"],
+    "root_binding": "commitments.quote is sha256-bytes@1 over the UTF-8 signed-quote envelope"
+  },
+  "x-pontmore-expiry-recovery": {
+    "public_refund_requires": "core/authorize_refund or a valid authorize_refund resolution effect",
+    "bare_expiry": "The verified Bitcoin provider may retrieve the original token as private recovery material, but the service publishes no core/refund.",
+    "completion_before_core_refund": [
+      "immediate NUT-07 UNSPENT result",
+      "authenticated delivery of the original token to the root-derived Bitcoin provider"
+    ],
+    "unattributed_state": "A later NUT-07 PENDING or SPENT result does not identify which permitted key spent the proofs and does not itself authorize core/refund."
+  },
+  "paths": {
+    "/v1/quotes": {
+      "post": {
+        "operationId": "createQuote",
+        "summary": "Create a signed exact quote",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/QuoteRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed quote",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SignedQuote" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/v1/coordinations/{id}/funding-instructions": {
+      "get": {
+        "operationId": "getFundingInstructions",
+        "summary": "Get the required NUT-11 lock",
+        "parameters": [{ "$ref": "#/components/parameters/CoordinationId" }],
+        "responses": {
+          "200": {
+            "description": "Funding instructions bound to the accepted coordination",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundingInstructions"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/coordinations/{id}/funding": {
+      "post": {
+        "operationId": "submitFunding",
+        "summary": "Submit the locked Cashu token",
+        "description": "Idempotent by coordination id. The service verifies and persists the token before core/secure may be published.",
+        "parameters": [{ "$ref": "#/components/parameters/CoordinationId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FundingSubmission" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current safe coordination status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CoordinationStatus" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/v1/coordinations/{id}/payout": {
+      "put": {
+        "operationId": "putPayout",
+        "summary": "Set the Bitcoin recipient payout target",
+        "description": "Idempotent for an identical target. A different target conflicts after the first accepted value.",
+        "parameters": [{ "$ref": "#/components/parameters/CoordinationId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PayoutTarget" }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Payout target accepted" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/v1/coordinations/{id}": {
+      "get": {
+        "operationId": "getCoordination",
+        "summary": "Get public and safe custody facts",
+        "parameters": [{ "$ref": "#/components/parameters/CoordinationId" }],
+        "responses": {
+          "200": {
+            "description": "Safe status without tokens, proofs, invoices, or payout instructions",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CoordinationStatus" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/coordinations/{id}/refund": {
+      "get": {
+        "operationId": "getRefund",
+        "summary": "Pick up refund or expiry-recovery material",
+        "description": "Available only to the root-derived Bitcoin provider. An authorized refund returns its completed refund token. After bare locktime expiry, this endpoint may return the original token as private recovery material while the service publishes no core/refund. Post-expiry delivery requires an immediate NUT-07 UNSPENT check.",
+        "parameters": [{ "$ref": "#/components/parameters/CoordinationId" }],
+        "responses": {
+          "200": {
+            "description": "Authorized refund token or private expiry-recovery material",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RefundToken" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/openapi.json": {
+      "get": {
+        "operationId": "getOpenApi",
+        "summary": "Get this immutable service contract",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 document",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "nip98": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "NIP-98",
+        "description": "Authorization: Nostr <base64 kind-27235 event>. The service verifies the request URL, HTTP method, payload hash when a body is present, timestamp, and signer."
+      }
+    },
+    "parameters": {
+      "CoordinationId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "description": "Kind 7300 root event id"
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "NIP-98 authentication failed",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Coordination not found",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "The requested operation conflicts with current chain or custody state",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "InvalidRequest": {
+        "description": "Request validation failed",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "coordination_id"],
+        "properties": {
+          "category": { "type": "string" },
+          "coordination_id": { "type": ["string", "null"] }
+        }
+      },
+      "QuoteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "profile",
+          "terms_digest",
+          "direction",
+          "gross_sats",
+          "payout_type"
+        ],
+        "properties": {
+          "profile": { "const": "pontmore/swap@1" },
+          "terms_digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["fiat_to_btc", "btc_to_fiat"]
+          },
+          "gross_sats": { "$ref": "#/components/schemas/PositiveSats" },
+          "payout_type": {
+            "type": "string",
+            "enum": ["cashu_p2pk", "bolt11"]
+          }
+        }
+      },
+      "Quote": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/CashuQuote" },
+          { "$ref": "#/components/schemas/Bolt11Quote" }
+        ]
+      },
+      "CashuQuote": {
+        "unevaluatedProperties": false,
+        "allOf": [
+          { "$ref": "#/components/schemas/QuoteBase" },
+          {
+            "type": "object",
+            "required": ["payout_type", "payout_sats"],
+            "properties": {
+              "payout_type": { "const": "cashu_p2pk" },
+              "payout_sats": { "$ref": "#/components/schemas/PositiveSats" }
+            }
+          }
+        ]
+      },
+      "Bolt11Quote": {
+        "unevaluatedProperties": false,
+        "allOf": [
+          { "$ref": "#/components/schemas/QuoteBase" },
+          {
+            "type": "object",
+            "required": ["payout_type", "payout_min_sats"],
+            "properties": {
+              "payout_type": { "const": "bolt11" },
+              "payout_min_sats": {
+                "$ref": "#/components/schemas/PositiveSats"
+              }
+            }
+          }
+        ]
+      },
+      "QuoteBase": {
+        "type": "object",
+        "required": [
+          "profile",
+          "terms_digest",
+          "direction",
+          "gross_sats",
+          "operator_fee_sats",
+          "network_cost_sats",
+          "fee_bearer",
+          "refund_fee_mode",
+          "expires_at"
+        ],
+        "properties": {
+          "profile": { "const": "pontmore/swap@1" },
+          "terms_digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["fiat_to_btc", "btc_to_fiat"]
+          },
+          "gross_sats": { "$ref": "#/components/schemas/PositiveSats" },
+          "operator_fee_sats": {
+            "$ref": "#/components/schemas/NonNegativeSats"
+          },
+          "network_cost_sats": {
+            "$ref": "#/components/schemas/NonNegativeSats"
+          },
+          "fee_bearer": { "const": "recipient" },
+          "refund_fee_mode": {
+            "type": "string",
+            "enum": ["network_only", "full"]
+          },
+          "expires_at": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "SignedQuote": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["quote", "pubkey", "signature"],
+        "properties": {
+          "quote": { "$ref": "#/components/schemas/Quote" },
+          "pubkey": { "$ref": "#/components/schemas/Pubkey" },
+          "signature": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{128}$"
+          }
+        }
+      },
+      "FundingInstructions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "coordination_id",
+          "mint_url",
+          "amount_sats",
+          "operator_pubkey",
+          "refund_pubkey",
+          "locktime"
+        ],
+        "properties": {
+          "coordination_id": { "$ref": "#/components/schemas/EventId" },
+          "mint_url": { "type": "string", "format": "uri" },
+          "amount_sats": { "$ref": "#/components/schemas/PositiveSats" },
+          "operator_pubkey": { "$ref": "#/components/schemas/Pubkey" },
+          "refund_pubkey": { "$ref": "#/components/schemas/Pubkey" },
+          "locktime": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "FundingSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["token"],
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Raw Cashu token. Private and never returned by status endpoints."
+          }
+        }
+      },
+      "PayoutTarget": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "pubkey"],
+            "properties": {
+              "type": { "const": "cashu_p2pk" },
+              "pubkey": { "$ref": "#/components/schemas/Pubkey" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "invoice"],
+            "properties": {
+              "type": { "const": "bolt11" },
+              "invoice": { "type": "string", "minLength": 1 }
+            }
+          }
+        ]
+      },
+      "CoordinationStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["coordination_id", "public_state", "custody_overlay"],
+        "properties": {
+          "coordination_id": { "$ref": "#/components/schemas/EventId" },
+          "public_state": { "type": "string" },
+          "custody_overlay": {
+            "type": ["string", "null"],
+            "enum": [
+              "expired_recovery_available",
+              "expired_pending_unattributed",
+              "expired_spent_unattributed",
+              "settlement_unfulfillable",
+              null
+            ]
+          }
+        }
+      },
+      "RefundToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["coordination_id", "kind", "token"],
+        "properties": {
+          "coordination_id": { "$ref": "#/components/schemas/EventId" },
+          "kind": {
+            "type": "string",
+            "enum": ["authorized_refund", "expired_recovery_material"],
+            "description": "expired_recovery_material is private custody recovery and does not assert or authorize core/refund."
+          },
+          "token": { "type": "string", "minLength": 1 }
+        }
+      },
+      "Pubkey": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "EventId": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "PositiveSats": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 2100000000000000
+      },
+      "NonNegativeSats": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2100000000000000
+      }
+    }
+  }
+}

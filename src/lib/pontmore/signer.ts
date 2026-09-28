@@ -9,6 +9,8 @@
  * which takes a raw private key.
  */
 
+import { hkdfSync } from 'node:crypto';
+
 import { decode } from 'nostr-tools/nip19';
 import { decrypt, encrypt, getConversationKey } from 'nostr-tools/nip44';
 import { schnorr } from '@noble/curves/secp256k1.js';
@@ -35,6 +37,8 @@ export interface EventSigner {
   sign(template: SignTemplate): NostrEvent;
   /** Sign one already-hashed 32-byte application digest. */
   signDigest(digest: Uint8Array): string;
+  /** Derive the process-local key used only by the encrypted custody store. */
+  deriveCustodyStoreKey(): Uint8Array;
   nip44Encrypt(peerPubkey: string, plaintext: string): string;
   nip44Decrypt(peerPubkey: string, ciphertext: string): string;
 }
@@ -84,6 +88,18 @@ export function createSigner(
         );
       }
       return Buffer.from(schnorr.sign(digest, secretKey)).toString('hex');
+    },
+
+    deriveCustodyStoreKey() {
+      return new Uint8Array(
+        hkdfSync(
+          'sha256',
+          secretKey,
+          Buffer.from('cashu-escrow/custody-store/salt', 'utf8'),
+          Buffer.from('cashu-escrow/custody-store/v1', 'utf8'),
+          32
+        )
+      );
     },
 
     nip44Encrypt(peerPubkey, plaintext) {

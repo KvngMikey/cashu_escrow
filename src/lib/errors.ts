@@ -21,6 +21,16 @@ export const ERROR_CATEGORIES = [
   'private_lane_invalid',
   /** Every configured relay refused or failed the operation. */
   'relay_unavailable',
+  /** The configured mint is unavailable or lacks a required capability. */
+  'mint_unavailable',
+  /** A Lightning Address or invoice endpoint could not complete its request. */
+  'lightning_unavailable',
+  /** Custody material or a requested custody transition is invalid. */
+  'custody_invalid',
+  /** A coordination already has incompatible custody state. */
+  'custody_conflict',
+  /** The encrypted custody journal cannot be read or durably written. */
+  'storage_unavailable',
 ] as const;
 
 export type ErrorCategory = (typeof ERROR_CATEGORIES)[number];

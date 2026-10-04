@@ -135,6 +135,7 @@ describe('createSigner', () => {
       'pubkey',
       'sign',
       'signDigest',
+      'deriveCustodyStoreKey',
       'nip44Encrypt',
       'nip44Decrypt',
     ]);
@@ -148,5 +149,18 @@ describe('createSigner', () => {
       .join(' ');
     expect(reachable).not.toContain(secretHex);
     expect(reachable).not.toContain(OPERATOR.nsec);
+  });
+
+  it('derives a stable, identity-bound custody store key', () => {
+    const first = createSigner(OPERATOR.nsec).deriveCustodyStoreKey();
+    const repeated = createSigner(OPERATOR.nsec).deriveCustodyStoreKey();
+    const other = createSigner(CUSTOMER.nsec).deriveCustodyStoreKey();
+
+    expect(first).toHaveLength(32);
+    expect(first).toEqual(repeated);
+    expect(first).not.toEqual(other);
+    expect(Buffer.from(first).toString('hex')).not.toBe(
+      Buffer.from(OPERATOR.secretKey).toString('hex')
+    );
   });
 });

@@ -5,8 +5,11 @@ An experimental standalone Cashu escrow operator for
 
 The current implementation includes the Pontmore coordination kernel, shared
 conformance fixtures, discovery-event builders, typed operator configuration,
-signed exact quotes, and the OpenAPI contract for the private service. It
-validates kind 7300 coordination roots, kind 7301 actions, the
+signed exact quotes, the private-service OpenAPI contract, and the custody
+engine. Custody validates NUT-11 locks, checks NUT-07 before every action,
+stores bearer material in an encrypted append-only journal, settles Cashu and
+Lightning payouts, and keeps authorized refunds separate from passive expiry
+recovery. It validates kind 7300 coordination roots, kind 7301 actions, the
 `pontmore/swap@1` profile, linked histories, signer authority, disputes, forks,
 and terminal outcomes. Kinds 30360 and 30361 provide agent and escrow discovery.
 

@@ -29,6 +29,18 @@ const RelayList = z
       .min(1)
   );
 
+const ServiceBaseUrl = HttpUrl.refine((value) => {
+  const url = parseUrl(value);
+  return (
+    url !== null &&
+    (url.pathname === '/' || url.pathname === '') &&
+    url.search === '' &&
+    url.hash === '' &&
+    url.username === '' &&
+    url.password === ''
+  );
+}, 'expected a service origin without path, query, credentials, or fragment');
+
 const Environment = z.object({
   NOSTR_RELAYS: RelayList,
   OPERATOR_NSEC: z.string().min(1),
@@ -36,7 +48,9 @@ const Environment = z.object({
   MINT_URL: HttpUrl,
   DESCRIPTOR_D_TAG: z.string().regex(/^[!-~]{1,128}$/),
   DESCRIPTOR_TTL_SECONDS: integerString(1),
-  SERVICE_BASE_URL: HttpUrl,
+  SERVICE_BASE_URL: ServiceBaseUrl,
+  SERVICE_LISTEN_HOST: z.string().min(1),
+  SERVICE_LISTEN_PORT: integerString(1, 65_535),
   SCHEMA_URL: HttpsUrl,
 
   FEES_ENABLED: BooleanString,
@@ -47,12 +61,14 @@ const Environment = z.object({
   RETURN_LN_OVERAGE: BooleanString,
   OPERATOR_LN_ADDRESS: z.string().min(1),
   QUOTE_TTL_SECONDS: integerString(1),
+  QUOTE_NETWORK_COST_SATS: integerString(0, MAX_SATS),
   DEFAULT_PAYOUT_TYPE: z.enum(['cashu_p2pk', 'bolt11']),
 
   RELEASE_SAFETY_MARGIN_SECONDS: integerString(1),
   DISPUTE_WINDOW_SECONDS: integerString(1),
   MIN_LOCKTIME_SECONDS: integerString(1),
   CUSTODY_STORE_PATH: z.string().min(1),
+  OPERATOR_STORE_PATH: z.string().min(1),
 });
 
 export type AppConfig = {
@@ -63,6 +79,8 @@ export type AppConfig = {
   descriptorDTag: string;
   descriptorTtlSeconds: number;
   serviceBaseUrl: string;
+  serviceListenHost: string;
+  serviceListenPort: number;
   schemaUrl: string;
   feesEnabled: boolean;
   operatorFeeBps: number;
@@ -72,11 +90,13 @@ export type AppConfig = {
   returnLnOverage: boolean;
   operatorLnAddress: string;
   quoteTtlSeconds: number;
+  quoteNetworkCostSats: number;
   defaultPayoutType: 'cashu_p2pk' | 'bolt11';
   releaseSafetyMarginSeconds: number;
   disputeWindowSeconds: number;
   minLocktimeSeconds: number;
   custodyStorePath: string;
+  operatorStorePath: string;
 };
 
 /** Parse the process environment once and return only typed application data. */
@@ -116,6 +136,8 @@ export function loadConfig(
     descriptorDTag: env.DESCRIPTOR_D_TAG,
     descriptorTtlSeconds: env.DESCRIPTOR_TTL_SECONDS,
     serviceBaseUrl: env.SERVICE_BASE_URL,
+    serviceListenHost: env.SERVICE_LISTEN_HOST,
+    serviceListenPort: env.SERVICE_LISTEN_PORT,
     schemaUrl: env.SCHEMA_URL,
     feesEnabled: env.FEES_ENABLED,
     operatorFeeBps: env.OPERATOR_FEE_BPS,
@@ -125,10 +147,12 @@ export function loadConfig(
     returnLnOverage: env.RETURN_LN_OVERAGE,
     operatorLnAddress: env.OPERATOR_LN_ADDRESS,
     quoteTtlSeconds: env.QUOTE_TTL_SECONDS,
+    quoteNetworkCostSats: env.QUOTE_NETWORK_COST_SATS,
     defaultPayoutType: env.DEFAULT_PAYOUT_TYPE,
     releaseSafetyMarginSeconds: env.RELEASE_SAFETY_MARGIN_SECONDS,
     disputeWindowSeconds: env.DISPUTE_WINDOW_SECONDS,
     minLocktimeSeconds: env.MIN_LOCKTIME_SECONDS,
     custodyStorePath: env.CUSTODY_STORE_PATH,
+    operatorStorePath: env.OPERATOR_STORE_PATH,
   });
 }

@@ -26,6 +26,10 @@ const StoredRecord = z
     grossSats: z.number().int().positive(),
     inputFeeSats: z.number().int().nonnegative(),
     proofCount: z.number().int().positive(),
+    tokenFingerprint: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
     networkCostSats: z.number().int().nonnegative(),
     locktime: z.number().int().positive(),
     operatorFeeSats: z.number().int().nonnegative().optional(),
@@ -58,6 +62,7 @@ export interface CustodyStore {
 export class EncryptedCustodyStore implements CustodyStore {
   readonly #path: string;
   readonly #key: Uint8Array;
+  #tail: Promise<void> = Promise.resolve();
 
   constructor(path: string, key: Uint8Array) {
     if (key.length !== 32) {
@@ -68,11 +73,17 @@ export class EncryptedCustodyStore implements CustodyStore {
   }
 
   async get(coordinationId: string): Promise<CustodyRecord | undefined> {
-    const records = await this.all();
-    return records.find((record) => record.coordinationId === coordinationId);
+    return this.#exclusive(async () => {
+      const records = await this.#readAll();
+      return records.find((record) => record.coordinationId === coordinationId);
+    });
   }
 
   async all(): Promise<readonly CustodyRecord[]> {
+    return this.#exclusive(() => this.#readAll());
+  }
+
+  async #readAll(): Promise<readonly CustodyRecord[]> {
     let contents: string;
     try {
       contents = await readFile(this.#path, 'utf8');
@@ -114,9 +125,15 @@ export class EncryptedCustodyStore implements CustodyStore {
   }
 
   async append(input: CustodyRecord): Promise<void> {
+    await this.#exclusive(() => this.#append(input));
+  }
+
+  async #append(input: CustodyRecord): Promise<void> {
     const record = StoredRecord.safeParse(input);
     if (!record.success) throw storageError('custody record is invalid');
-    const current = await this.get(record.data.coordinationId);
+    const current = (await this.#readAll()).find(
+      (stored) => stored.coordinationId === record.data.coordinationId
+    );
     const expectedRevision = (current?.revision ?? 0) + 1;
     if (record.data.revision !== expectedRevision) {
       throw new EscrowError(
@@ -151,6 +168,20 @@ export class EncryptedCustodyStore implements CustodyStore {
       }
     } catch {
       throw storageError('custody record could not be persisted');
+    }
+  }
+
+  async #exclusive<T>(action: () => Promise<T>): Promise<T> {
+    const previous = this.#tail;
+    let release = (): void => undefined;
+    this.#tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await action();
+    } finally {
+      release();
     }
   }
 }

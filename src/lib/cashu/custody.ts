@@ -48,6 +48,7 @@ export class CustodyEngine {
   readonly #policy: CustodyPolicy;
   readonly #invoiceSource: LightningInvoiceSource | undefined;
   readonly #queues = new Map<string, Promise<void>>();
+  #holdTail: Promise<void> = Promise.resolve();
 
   constructor(input: {
     mint: CustodyMint;
@@ -64,9 +65,19 @@ export class CustodyEngine {
   }
 
   async hold(request: HoldRequest): Promise<CustodyRecord> {
-    return this.#exclusive(request.expectation.coordinationId, () =>
-      this.#hold(request)
-    );
+    const previous = this.#holdTail;
+    let release = (): void => undefined;
+    this.#holdTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await this.#exclusive(request.expectation.coordinationId, () =>
+        this.#hold(request)
+      );
+    } finally {
+      release();
+    }
   }
 
   async #hold(request: HoldRequest): Promise<CustodyRecord> {
@@ -91,6 +102,18 @@ export class CustodyEngine {
       request.expectation,
       this.#mint
     );
+    const duplicate = (await this.#store.all()).find(
+      (record) =>
+        record.coordinationId !== request.expectation.coordinationId &&
+        (record.token === request.token ||
+          record.tokenFingerprint === verified.tokenFingerprint)
+    );
+    if (duplicate !== undefined) {
+      conflict(
+        request.expectation.coordinationId,
+        'custody token is already bound to another coordination'
+      );
+    }
     const record: CustodyRecord = {
       coordinationId: request.expectation.coordinationId,
       revision: 1,
@@ -101,6 +124,7 @@ export class CustodyEngine {
       grossSats: verified.grossSats,
       inputFeeSats: verified.inputFeeSats,
       proofCount: verified.proofCount,
+      tokenFingerprint: verified.tokenFingerprint,
       networkCostSats: request.expectation.networkCostSats,
       locktime: verified.locktime,
       observedAt: request.observedAt,
@@ -182,9 +206,14 @@ export class CustodyEngine {
             input.coordinationId,
             fees.operatorFee
           );
+    await this.#mint.validateBolt11Amount(input.payout.invoice, fees.payout);
+    if (feeInvoice !== undefined) {
+      await this.#mint.validateBolt11Amount(feeInvoice, fees.operatorFee);
+    }
     const melted = await this.#mint.meltBolt11({
       token: record.token,
       invoice: input.payout.invoice,
+      expectedAmount: fees.payout,
       signer: this.#signer,
     });
     if (
@@ -219,6 +248,7 @@ export class CustodyEngine {
       const feeMelt = await this.#mint.meltBolt11({
         token: changeToken,
         invoice: feeInvoice,
+        expectedAmount: fees.operatorFee,
         signer: this.#signer,
       });
       if (feeMelt.paidAmount !== fees.operatorFee) {
@@ -345,6 +375,33 @@ export class CustodyEngine {
     return this.#exclusive(input.coordinationId, () =>
       this.#observeExpiry(input)
     );
+  }
+
+  async markSettlementUnfulfillable(input: {
+    coordinationId: string;
+    now: number;
+  }): Promise<CustodyRecord> {
+    return this.#exclusive(input.coordinationId, async () => {
+      const record = await this.#requireRecord(input.coordinationId);
+      if (record.status !== 'held') {
+        conflict(input.coordinationId, 'terminal custody cannot be overlaid');
+      }
+      if (
+        input.now <=
+        record.locktime - this.#policy.releaseSafetyMarginSeconds
+      ) {
+        custodyInvalid(
+          input.coordinationId,
+          'settlement release window remains open'
+        );
+      }
+      if (record.overlay === 'settlement_unfulfillable') return record;
+      const overlaid = nextRecord(record, input.now, {
+        overlay: 'settlement_unfulfillable',
+      });
+      await this.#store.append(overlaid);
+      return overlaid;
+    });
   }
 
   async #observeExpiry(input: {

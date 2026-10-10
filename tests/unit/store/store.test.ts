@@ -17,6 +17,7 @@ const base: CustodyRecord = {
   grossSats: 1_000,
   inputFeeSats: 1,
   proofCount: 1,
+  tokenFingerprint: 'aa'.repeat(32),
   networkCostSats: 1,
   locktime: 2_000,
   observedAt: 1_000,

@@ -39,6 +39,8 @@ export interface EventSigner {
   signDigest(digest: Uint8Array): string;
   /** Derive the process-local key used only by the encrypted custody store. */
   deriveCustodyStoreKey(): Uint8Array;
+  /** Derive a distinct key for quotes, payout targets, and the private outbox. */
+  deriveOperatorStoreKey(): Uint8Array;
   nip44Encrypt(peerPubkey: string, plaintext: string): string;
   nip44Decrypt(peerPubkey: string, ciphertext: string): string;
 }
@@ -97,6 +99,18 @@ export function createSigner(
           secretKey,
           Buffer.from('cashu-escrow/custody-store/salt', 'utf8'),
           Buffer.from('cashu-escrow/custody-store/v1', 'utf8'),
+          32
+        )
+      );
+    },
+
+    deriveOperatorStoreKey() {
+      return new Uint8Array(
+        hkdfSync(
+          'sha256',
+          secretKey,
+          Buffer.from('cashu-escrow/operator-store/salt', 'utf8'),
+          Buffer.from('cashu-escrow/operator-store/v1', 'utf8'),
           32
         )
       );

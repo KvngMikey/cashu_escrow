@@ -17,6 +17,10 @@ export const ERROR_CATEGORIES = [
   'content_invalid',
   /** An event failed id/signature verification. */
   'event_invalid',
+  /** HTTP authentication or participant authorization failed. */
+  'request_unauthorized',
+  /** The requested coordination is not one this operator accepted. */
+  'coordination_not_found',
   /** A gift wrap could not be opened or its sender could not be authenticated. */
   'private_lane_invalid',
   /** Every configured relay refused or failed the operation. */

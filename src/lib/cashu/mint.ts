@@ -55,6 +55,7 @@ export interface CustodyMint {
   initialize(): Promise<void>;
   inspectToken(token: string): InspectedToken;
   states(token: string): Promise<readonly MintProofState[]>;
+  validateBolt11Amount(invoice: string, expectedAmount: number): Promise<void>;
   swapToP2pk(input: {
     token: string;
     amount: number;
@@ -64,6 +65,7 @@ export interface CustodyMint {
   meltBolt11(input: {
     token: string;
     invoice: string;
+    expectedAmount: number;
     signer: EventSigner;
   }): Promise<MeltResult>;
 }
@@ -136,6 +138,27 @@ export class CashuTsMint implements CustodyMint {
     }
   }
 
+  async validateBolt11Amount(
+    invoice: string,
+    expectedAmount: number
+  ): Promise<void> {
+    try {
+      const quote = await this.#wallet.createMeltQuoteBolt11(invoice);
+      if (quote.amount.toNumber() !== expectedAmount) {
+        throw new EscrowError(
+          'custody_invalid',
+          'Lightning invoice amount does not match the bound quote'
+        );
+      }
+    } catch (error) {
+      if (error instanceof EscrowError) throw error;
+      throw new EscrowError(
+        'mint_unavailable',
+        'Lightning invoice validation failed'
+      );
+    }
+  }
+
   async swapToP2pk(input: {
     token: string;
     amount: number;
@@ -162,6 +185,7 @@ export class CashuTsMint implements CustodyMint {
   async meltBolt11(input: {
     token: string;
     invoice: string;
+    expectedAmount: number;
     signer: EventSigner;
   }): Promise<MeltResult> {
     const proofs = signInputProofs(
@@ -170,6 +194,12 @@ export class CashuTsMint implements CustodyMint {
     );
     try {
       const quote = await this.#wallet.createMeltQuoteBolt11(input.invoice);
+      if (quote.amount.toNumber() !== input.expectedAmount) {
+        throw new EscrowError(
+          'custody_invalid',
+          'Lightning invoice amount does not match the bound quote'
+        );
+      }
       const result = await this.#wallet.ops
         .meltBolt11(quote, proofs)
         .asRandom()
@@ -184,7 +214,8 @@ export class CashuTsMint implements CustodyMint {
           : {}),
         changeAmount,
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof EscrowError) throw error;
       throw new EscrowError('mint_unavailable', 'Lightning melt failed');
     }
   }

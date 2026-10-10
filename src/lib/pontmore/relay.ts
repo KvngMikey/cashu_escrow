@@ -17,16 +17,19 @@
  * fails only when every relay refuses, and query settles per relay.
  */
 
-import { SimplePool } from 'nostr-tools/pool';
+import { SimplePool, useWebSocketImplementation } from 'nostr-tools/pool';
 import type { SubCloser } from 'nostr-tools/pool';
 import type { Filter } from 'nostr-tools/filter';
 import type { NostrEvent } from 'nostr-tools/pure';
+import WebSocket from 'ws';
 
 import { EscrowError } from '../errors.ts';
 import { parseUrl, redactUrl } from '../primitives.ts';
 import { verifySignedEvent } from './signer.ts';
 
 const DEFAULT_QUERY_TIMEOUT_MS = 5_000;
+
+useWebSocketImplementation(WebSocket);
 
 /**
  * How many recently delivered event ids a subscription remembers. A swap

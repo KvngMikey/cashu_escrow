@@ -21,6 +21,8 @@ export type FakeRelayPool = RelayPool & {
   readonly closed: readonly string[];
   /** Seed an event as if a relay already had it. */
   seed(event: NostrEvent): void;
+  /** Change which relays reject publishes. */
+  setRejecting(relays: readonly string[]): void;
 };
 
 export function createFakeRelayPool(
@@ -44,6 +46,10 @@ export function createFakeRelayPool(
     stored,
     closed,
     seed: store,
+    setRejecting(relays) {
+      rejecting.clear();
+      for (const relay of relays) rejecting.add(relay);
+    },
 
     publish(relays: string[], event: NostrEvent): Promise<string>[] {
       return relays.map((url) => {

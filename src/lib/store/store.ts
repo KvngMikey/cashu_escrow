@@ -26,6 +26,10 @@ const StoredRecord = z
     grossSats: z.number().int().positive(),
     inputFeeSats: z.number().int().nonnegative(),
     proofCount: z.number().int().positive(),
+    tokenFingerprint: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
     networkCostSats: z.number().int().nonnegative(),
     locktime: z.number().int().positive(),
     operatorFeeSats: z.number().int().nonnegative().optional(),
@@ -58,6 +62,7 @@ export interface CustodyStore {
 export class EncryptedCustodyStore implements CustodyStore {
   readonly #path: string;
   readonly #key: Uint8Array;
+  #tail: Promise<void> = Promise.resolve();
 
   constructor(path: string, key: Uint8Array) {
     if (key.length !== 32) {
@@ -68,11 +73,17 @@ export class EncryptedCustodyStore implements CustodyStore {
   }
 
   async get(coordinationId: string): Promise<CustodyRecord | undefined> {
-    const records = await this.all();
-    return records.find((record) => record.coordinationId === coordinationId);
+    return this.#exclusive(async () => {
+      const records = await this.#readAll();
+      return records.find((record) => record.coordinationId === coordinationId);
+    });
   }
 
   async all(): Promise<readonly CustodyRecord[]> {
+    return this.#exclusive(() => this.#readAll());
+  }
+
+  async #readAll(): Promise<readonly CustodyRecord[]> {
     let contents: string;
     try {
       contents = await readFile(this.#path, 'utf8');
@@ -82,21 +93,34 @@ export class EncryptedCustodyStore implements CustodyStore {
     }
 
     const current = new Map<string, CustodyRecord>();
+    const lines = contents.split('\n');
+    const finalLineIsUnframed = !contents.endsWith('\n');
+    let discardedTail = false;
     try {
-      for (const rawLine of contents.split('\n')) {
+      for (const [index, rawLine] of lines.entries()) {
         if (rawLine.length === 0) continue;
-        const line = JournalLine.parse(JSON.parse(rawLine));
-        const decipher = createDecipheriv(
-          'aes-256-gcm',
-          this.#key,
-          Buffer.from(line.nonce, 'hex')
-        );
-        decipher.setAuthTag(Buffer.from(line.tag, 'hex'));
-        const plaintext = Buffer.concat([
-          decipher.update(Buffer.from(line.ciphertext, 'base64')),
-          decipher.final(),
-        ]).toString('utf8');
-        const record = StoredRecord.parse(JSON.parse(plaintext));
+        let record: CustodyRecord;
+        try {
+          const line = JournalLine.parse(JSON.parse(rawLine));
+          const decipher = createDecipheriv(
+            'aes-256-gcm',
+            this.#key,
+            Buffer.from(line.nonce, 'hex')
+          );
+          decipher.setAuthTag(Buffer.from(line.tag, 'hex'));
+          const plaintext = Buffer.concat([
+            decipher.update(Buffer.from(line.ciphertext, 'base64')),
+            decipher.final(),
+          ]).toString('utf8');
+          record = StoredRecord.parse(JSON.parse(plaintext));
+        } catch (error) {
+          if (finalLineIsUnframed && index === lines.length - 1) {
+            await repairUnframedTail(this.#path, contents, rawLine);
+            discardedTail = true;
+            break;
+          }
+          throw error;
+        }
         const previous = current.get(record.coordinationId);
         if (
           previous !== undefined &&
@@ -107,6 +131,9 @@ export class EncryptedCustodyStore implements CustodyStore {
         if (previous === undefined && record.revision !== 1) throw new Error();
         current.set(record.coordinationId, record);
       }
+      if (finalLineIsUnframed && !discardedTail && lines.at(-1)?.length !== 0) {
+        await frameValidTail(this.#path);
+      }
     } catch {
       throw storageError('custody store is corrupt or uses the wrong key');
     }
@@ -114,9 +141,15 @@ export class EncryptedCustodyStore implements CustodyStore {
   }
 
   async append(input: CustodyRecord): Promise<void> {
+    await this.#exclusive(() => this.#append(input));
+  }
+
+  async #append(input: CustodyRecord): Promise<void> {
     const record = StoredRecord.safeParse(input);
     if (!record.success) throw storageError('custody record is invalid');
-    const current = await this.get(record.data.coordinationId);
+    const current = (await this.#readAll()).find(
+      (stored) => stored.coordinationId === record.data.coordinationId
+    );
     const expectedRevision = (current?.revision ?? 0) + 1;
     if (record.data.revision !== expectedRevision) {
       throw new EscrowError(
@@ -152,6 +185,45 @@ export class EncryptedCustodyStore implements CustodyStore {
     } catch {
       throw storageError('custody record could not be persisted');
     }
+  }
+
+  async #exclusive<T>(action: () => Promise<T>): Promise<T> {
+    const previous = this.#tail;
+    let release = (): void => undefined;
+    this.#tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await action();
+    } finally {
+      release();
+    }
+  }
+}
+
+async function repairUnframedTail(
+  path: string,
+  contents: string,
+  tail: string
+): Promise<void> {
+  const length = Buffer.byteLength(contents.slice(0, -tail.length), 'utf8');
+  const handle = await open(path, 'r+');
+  try {
+    await handle.truncate(length);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function frameValidTail(path: string): Promise<void> {
+  const handle = await open(path, 'a');
+  try {
+    await handle.appendFile('\n', 'utf8');
+    await handle.sync();
+  } finally {
+    await handle.close();
   }
 }
 

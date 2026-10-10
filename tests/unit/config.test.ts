@@ -15,6 +15,8 @@ const environment = () => ({
   DESCRIPTOR_D_TAG: 'cashu-main',
   DESCRIPTOR_TTL_SECONDS: '2592000',
   SERVICE_BASE_URL: 'https://escrow.example.com',
+  SERVICE_LISTEN_HOST: '127.0.0.1',
+  SERVICE_LISTEN_PORT: '3000',
   SCHEMA_URL: 'https://escrow.example.com/v1/openapi.json',
   FEES_ENABLED: 'false',
   OPERATOR_FEE_BPS: '100',
@@ -24,11 +26,13 @@ const environment = () => ({
   RETURN_LN_OVERAGE: 'true',
   OPERATOR_LN_ADDRESS: 'operator@example.com',
   QUOTE_TTL_SECONDS: '600',
+  QUOTE_NETWORK_COST_SATS: '2',
   DEFAULT_PAYOUT_TYPE: 'cashu_p2pk',
   RELEASE_SAFETY_MARGIN_SECONDS: '600',
   DISPUTE_WINDOW_SECONDS: '3600',
   MIN_LOCKTIME_SECONDS: '1800',
   CUSTODY_STORE_PATH: './data/custody.enc',
+  OPERATOR_STORE_PATH: './data/operator.enc',
 });
 
 describe('configuration', () => {
@@ -54,6 +58,8 @@ describe('configuration', () => {
     expect(config.returnLnOverage).toBe(true);
     expect(config.refundFeeMode).toBe('network_only');
     expect(config.operatorFeeBps).toBe(100);
+    expect(config.serviceListenPort).toBe(3000);
+    expect(config.quoteNetworkCostSats).toBe(2);
     expect(config.operatorSigner.pubkey).toBe(OPERATOR.pubkey);
     expect(config.resolverSigner.pubkey).toBe(CUSTOMER.pubkey);
   });
@@ -79,9 +85,35 @@ describe('configuration', () => {
     expect(isEscrowError(failure) && failure.category).toBe('config_invalid');
   });
 
+  it('rejects custody and operator journals that resolve to the same file', () => {
+    const failure = capture(() =>
+      loadConfig({
+        ...environment(),
+        CUSTODY_STORE_PATH: './data/../data/shared.enc',
+        OPERATOR_STORE_PATH: './data/shared.enc',
+      })
+    );
+
+    expect(isEscrowError(failure) && failure.category).toBe('config_invalid');
+    expect(isEscrowError(failure) && failure.message).toMatch(
+      /paths must differ/
+    );
+  });
+
   it('does not coerce arbitrary strings to true', () => {
     const failure = capture(() =>
       loadConfig({ ...environment(), FEES_ENABLED: 'yes' })
+    );
+
+    expect(isEscrowError(failure) && failure.category).toBe('config_invalid');
+  });
+
+  it('requires SERVICE_BASE_URL to be an origin', () => {
+    const failure = capture(() =>
+      loadConfig({
+        ...environment(),
+        SERVICE_BASE_URL: 'https://escrow.example.com/private?token=value',
+      })
     );
 
     expect(isEscrowError(failure) && failure.category).toBe('config_invalid');

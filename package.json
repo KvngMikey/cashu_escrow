@@ -10,6 +10,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "operator": "node --import tsx src/operator/index.ts",
+    "smoke": "node --import tsx scripts/smoke-swap.ts",
     "publish:agent": "node --import tsx scripts/publish-agent.ts",
     "publish:descriptor": "node --import tsx scripts/publish-descriptor.ts",
     "publish:profile": "node --import tsx scripts/publish-profile.ts",
@@ -30,12 +32,14 @@
     "@noble/curves": "^2.4.0",
     "dotenv": "^17.4.2",
     "nostr-tools": "^2.25.2",
+    "ws": "^8.22.0",
     "zod": "^4.6.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@scalar/openapi-parser": "^0.29.7",
     "@types/node": "^26.5.1",
+    "@types/ws": "^8.18.2",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",

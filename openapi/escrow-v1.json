@@ -58,6 +58,7 @@
       "expires_at"
     ],
     "signed_quote_envelope_field_order": ["quote", "pubkey", "signature"],
+    "terms_binding": "terms_digest must equal the coordination root commitments.private_terms digest",
     "root_binding": "commitments.quote is sha256-bytes@1 over the UTF-8 signed-quote envelope"
   },
   "x-pontmore-expiry-recovery": {
@@ -92,6 +93,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
           "422": { "$ref": "#/components/responses/InvalidRequest" }
         }
       }
@@ -232,9 +234,9 @@
   "components": {
     "securitySchemes": {
       "nip98": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "NIP-98",
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
         "description": "Authorization: Nostr <base64 kind-27235 event>. The service verifies the request URL, HTTP method, payload hash when a body is present, timestamp, and signer."
       }
     },
@@ -253,6 +255,14 @@
     "responses": {
       "Unauthorized": {
         "description": "NIP-98 authentication failed",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Quote creation quota exceeded",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/Error" }
@@ -436,6 +446,7 @@
           "token": {
             "type": "string",
             "minLength": 1,
+            "maxLength": 262144,
             "description": "Raw Cashu token. Private and never returned by status endpoints."
           }
         }
@@ -457,7 +468,11 @@
             "required": ["type", "invoice"],
             "properties": {
               "type": { "const": "bolt11" },
-              "invoice": { "type": "string", "minLength": 1 }
+              "invoice": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              }
             }
           }
         ]

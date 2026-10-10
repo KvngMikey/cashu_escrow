@@ -136,6 +136,7 @@ describe('createSigner', () => {
       'sign',
       'signDigest',
       'deriveCustodyStoreKey',
+      'deriveOperatorStoreKey',
       'nip44Encrypt',
       'nip44Decrypt',
     ]);
@@ -161,6 +162,14 @@ describe('createSigner', () => {
     expect(first).not.toEqual(other);
     expect(Buffer.from(first).toString('hex')).not.toBe(
       Buffer.from(OPERATOR.secretKey).toString('hex')
+    );
+  });
+
+  it('domain-separates the custody and operator store keys', () => {
+    const signer = createSigner(OPERATOR.nsec);
+    expect(signer.deriveOperatorStoreKey()).toHaveLength(32);
+    expect(signer.deriveOperatorStoreKey()).not.toEqual(
+      signer.deriveCustodyStoreKey()
     );
   });
 });

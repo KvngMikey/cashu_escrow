@@ -1,4 +1,5 @@
 import { normalizeMintUrl } from '@cashu/cashu-ts';
+import { createHash } from 'node:crypto';
 
 import { EscrowError } from '../errors.ts';
 import { assertHexPubkey } from '../primitives.ts';
@@ -15,6 +16,7 @@ export type LockExpectation = {
   fiatConfirmBy: number;
   disputeWindowSeconds: number;
   releaseSafetyMarginSeconds: number;
+  minimumLocktime?: number;
 };
 
 export type VerifiedLockedToken = {
@@ -23,6 +25,7 @@ export type VerifiedLockedToken = {
   grossSats: number;
   inputFeeSats: number;
   proofCount: number;
+  tokenFingerprint: string;
   locktime: number;
 };
 
@@ -69,10 +72,12 @@ export async function verifyLockedToken(
     invalid(expectation, 'locked token has no proofs');
   }
 
-  const minimumLocktime =
+  const minimumLocktime = Math.max(
     expectation.fiatConfirmBy +
-    expectation.disputeWindowSeconds +
-    expectation.releaseSafetyMarginSeconds;
+      expectation.disputeWindowSeconds +
+      expectation.releaseSafetyMarginSeconds,
+    expectation.minimumLocktime ?? 0
+  );
   let commonLocktime: number | undefined;
 
   for (const proof of inspected.proofs) {
@@ -123,8 +128,16 @@ export async function verifyLockedToken(
     grossSats: inspected.amount,
     inputFeeSats: inspected.inputFee,
     proofCount: inspected.proofs.length,
+    tokenFingerprint: fingerprintProofSecrets(
+      inspected.proofs.map((proof) => proof.secret)
+    ),
     locktime: commonLocktime as number,
   };
+}
+
+export function fingerprintProofSecrets(secrets: readonly unknown[]): string {
+  const canonical = secrets.map((secret) => JSON.stringify(secret)).sort();
+  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
 function assertUnitThreshold(

@@ -128,6 +128,35 @@ describe('CustodyEngine', () => {
     ).rejects.toMatchObject({ category: 'custody_conflict' });
   });
 
+  it('backfills legacy fingerprints before checking another token encoding', async () => {
+    const { engine, store } = setup();
+    const held = await hold(engine);
+    const { tokenFingerprint: _legacyMissing, ...legacy } = held;
+    store.records.set(held.coordinationId, legacy);
+    await expect(
+      engine.hold({
+        token: 'same-proofs-different-encoding',
+        observedAt: 1_001,
+        expectation: {
+          coordinationId: 'swap-2',
+          mintUrl: 'http://mint.test',
+          operatorPubkey: OPERATOR.pubkey,
+          providerPubkey: CUSTOMER.pubkey,
+          grossSats: 1_000,
+          networkCostSats: 1,
+          payoutType: 'cashu_p2pk',
+          fiatConfirmBy: 2_000,
+          disputeWindowSeconds: 100,
+          releaseSafetyMarginSeconds: 50,
+        },
+      })
+    ).rejects.toMatchObject({ category: 'custody_conflict' });
+    expect(await store.get('swap-1')).toMatchObject({
+      revision: 2,
+      tokenFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+  });
+
   it('settles cashu P2PK exactly at the release boundary', async () => {
     const { engine, mint } = setup();
     await hold(engine);
@@ -209,6 +238,21 @@ describe('CustodyEngine', () => {
     expect(mint.swapCalls).toBe(0);
   });
 
+  it('records an unfulfillable late authorization without a payout target', async () => {
+    const { engine, store, mint } = setup();
+    await hold(engine);
+    await expect(
+      engine.markSettlementUnfulfillable({
+        coordinationId: 'swap-1',
+        now: 2_101,
+      })
+    ).resolves.toMatchObject({ overlay: 'settlement_unfulfillable' });
+    expect((await store.get('swap-1'))?.overlay).toBe(
+      'settlement_unfulfillable'
+    );
+    expect(mint.swapCalls).toBe(0);
+  });
+
   it('settles bolt11 and returns unused reserve as a P2PK token', async () => {
     const { engine, mint, invoiceSource } = setup();
     mint.meltResults = [
@@ -277,6 +321,52 @@ describe('CustodyEngine', () => {
         now: 2_000,
       })
     ).rejects.toThrow(/invoice/);
+    expect(mint.meltCalls).toBe(0);
+  });
+
+  it('rejects a recipient invoice for a different amount before spending', async () => {
+    const { engine, mint } = setup();
+    mint.invoiceAmounts.set('lnbc-wrong-amount', 500);
+    await hold(engine, 'bolt11', 2);
+    await expect(
+      engine.settle({
+        coordinationId: 'swap-1',
+        payout: {
+          type: 'bolt11',
+          invoice: 'lnbc-wrong-amount',
+        },
+        amounts: {
+          grossSats: 1_000,
+          operatorFeeSats: 10,
+          networkCostSats: 2,
+          payoutSats: 988,
+        },
+        now: 2_000,
+      })
+    ).rejects.toThrow(/amount/);
+    expect(mint.meltCalls).toBe(0);
+  });
+
+  it('validates the operator fee invoice before spending the recipient melt', async () => {
+    const { engine, mint } = setup();
+    mint.invoiceAmounts.set('lnbc-10', 9);
+    await hold(engine, 'bolt11', 2);
+    await expect(
+      engine.settle({
+        coordinationId: 'swap-1',
+        payout: {
+          type: 'bolt11',
+          invoice: 'lnbc-recipient',
+        },
+        amounts: {
+          grossSats: 1_000,
+          operatorFeeSats: 10,
+          networkCostSats: 2,
+          payoutSats: 988,
+        },
+        now: 2_000,
+      })
+    ).rejects.toThrow(/amount/);
     expect(mint.meltCalls).toBe(0);
   });
 

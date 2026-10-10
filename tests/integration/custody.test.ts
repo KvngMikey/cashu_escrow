@@ -202,8 +202,8 @@ describe('custody against Nutshell FakeWallet', () => {
 
   it('refuses late settlement even though the mint still accepts the operator key', async () => {
     const now = unixNow();
-    const funding = await mintLocked(100, now + 3);
-    const policy = { ...basePolicy, releaseSafetyMarginSeconds: 2 };
+    const funding = await mintLocked(100, now + 10);
+    const policy = { ...basePolicy, releaseSafetyMarginSeconds: 8 };
     const amounts = settlementAmounts(100, funding.inputFee, policy);
     const { engine } = await heldEngine(
       'late',
@@ -212,7 +212,7 @@ describe('custody against Nutshell FakeWallet', () => {
       now,
       'cashu_p2pk',
       funding.inputFee,
-      2
+      8
     );
     await delay(1_500);
     await expect(

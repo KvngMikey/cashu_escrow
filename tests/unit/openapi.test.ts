@@ -58,10 +58,24 @@ describe('OpenAPI service contract', () => {
       hash: 'sha256',
       signature: 'bip340-schnorr',
       public_key: 'the bound core/escrow Nostr pubkey',
+      terms_binding:
+        'terms_digest must equal the coordination root commitments.private_terms digest',
     });
     expect(document['x-pontmore-expiry-recovery']).toMatchObject({
       public_refund_requires:
         'core/authorize_refund or a valid authorize_refund resolution effect',
+    });
+    expect(
+      (
+        (document.components as Record<string, unknown>)
+          .securitySchemes as Record<string, unknown>
+      ).nip98
+    ).toEqual({
+      type: 'apiKey',
+      in: 'header',
+      name: 'Authorization',
+      description:
+        'Authorization: Nostr <base64 kind-27235 event>. The service verifies the request URL, HTTP method, payload hash when a body is present, timestamp, and signer.',
     });
     expect(document).not.toHaveProperty('pricing_policy');
 

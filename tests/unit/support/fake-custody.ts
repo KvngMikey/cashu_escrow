@@ -44,6 +44,8 @@ export class FakeCustodyMint implements CustodyMint {
     changeAmount: 10,
   };
   meltResults: MeltResult[] = [];
+  invoiceAmounts = new Map<string, number>();
+  beforeSwap: (() => Promise<void>) | undefined;
 
   constructor(inspected: InspectedToken) {
     this.inspected = inspected;
@@ -59,12 +61,22 @@ export class FakeCustodyMint implements CustodyMint {
     return Promise.resolve(this.proofStates);
   }
 
-  swapToP2pk(input: {
+  validateBolt11Amount(invoice: string, expectedAmount: number): Promise<void> {
+    const actual = this.invoiceAmounts.get(invoice);
+    return actual === undefined || actual === expectedAmount
+      ? Promise.resolve()
+      : Promise.reject(
+          new Error('Lightning invoice amount does not match the bound quote')
+        );
+  }
+
+  async swapToP2pk(input: {
     token: string;
     amount: number;
     recipientPubkey: string;
     signer: EventSigner;
   }): Promise<TokenSpendResult> {
+    await this.beforeSwap?.();
     this.swapCalls += 1;
     const sourceAmount =
       input.token === 'cashu-change'
@@ -73,19 +85,26 @@ export class FakeCustodyMint implements CustodyMint {
     const inputFee =
       input.token === 'cashu-change' ? 0 : this.inspected.inputFee;
     const changeAmount = sourceAmount - input.amount - inputFee;
-    return Promise.resolve({
+    return {
       recipientToken: `cashu-to-${input.recipientPubkey}`,
       recipientAmount: input.amount,
       ...(changeAmount > 0 ? { changeToken: 'cashu-operator' } : {}),
       changeAmount,
-    });
+    };
   }
 
-  meltBolt11(_input: {
+  meltBolt11(input: {
     token: string;
     invoice: string;
+    expectedAmount: number;
     signer: EventSigner;
   }): Promise<MeltResult> {
+    const result = this.meltResults[0] ?? this.meltResult;
+    if (result.paidAmount !== input.expectedAmount) {
+      return Promise.reject(
+        new Error('Lightning invoice amount does not match the bound quote')
+      );
+    }
     this.meltCalls += 1;
     return Promise.resolve(this.meltResults.shift() ?? this.meltResult);
   }

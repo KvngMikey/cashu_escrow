@@ -8,6 +8,7 @@ import type {
   OperatorStore,
   PayoutTarget,
 } from '../../../src/lib/store/operator-store.ts';
+import { OPERATOR } from './keys.ts';
 
 export class MemoryOperatorStore implements OperatorStore {
   beforeStageOutbox: ((key: string) => Promise<void> | void) | undefined;
@@ -23,10 +24,21 @@ export class MemoryOperatorStore implements OperatorStore {
     return Promise.resolve();
   }
 
-  putQuote(quote: SignedQuote): Promise<string> {
+  putQuote(
+    quote: SignedQuote,
+    _caller = OPERATOR.pubkey,
+    _storedAt = quote.quote.expires_at - 1
+  ): Promise<string> {
     const key = quoteCommitment(quote).digest;
     this.quotes.set(key, quote);
     return Promise.resolve(key);
+  }
+
+  bindQuote(key: string, coordinationId: string): Promise<void> {
+    if (!this.quotes.has(key))
+      return Promise.reject(new Error('missing quote'));
+    void coordinationId;
+    return Promise.resolve();
   }
 
   getQuote(key: string): Promise<SignedQuote | undefined> {

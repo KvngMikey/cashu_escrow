@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { appendFile, readFile, stat } from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
 
@@ -53,6 +53,31 @@ describe('EncryptedCustodyStore', () => {
     await expect(wrong.all()).rejects.toThrow(/wrong key/);
     await expect(store.append(base)).rejects.toMatchObject({
       category: 'custody_conflict',
+    });
+  });
+
+  it('discards only an unframed torn final append', async () => {
+    const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-store-${crypto.randomUUID()}/store.jsonl`;
+    const key = new Uint8Array(32).fill(7);
+    const store = new EncryptedCustodyStore(path, key);
+    await store.append(base);
+    await appendFile(path, '{"v":1,"nonce":"torn');
+
+    const restarted = new EncryptedCustodyStore(path, key);
+    await expect(restarted.get(base.coordinationId)).resolves.toEqual(base);
+    await expect(
+      restarted.append({ ...base, revision: 2, observedAt: 1_001 })
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects corruption in a newline-committed record', async () => {
+    const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-store-${crypto.randomUUID()}/store.jsonl`;
+    const store = new EncryptedCustodyStore(path, new Uint8Array(32).fill(7));
+    await store.append(base);
+    await appendFile(path, '{"invalid":true}\n');
+
+    await expect(store.all()).rejects.toMatchObject({
+      category: 'storage_unavailable',
     });
   });
 });

@@ -3,7 +3,11 @@ import type { EventSigner } from '../pontmore/signer.ts';
 import type { CustodyRecord, CustodyStore } from '../store/store.ts';
 import type { LightningInvoiceSource } from '../lightning/invoice.ts';
 import { computeFees, type RefundFeeMode } from './fees.ts';
-import { verifyLockedToken, type LockExpectation } from './lock.ts';
+import {
+  fingerprintProofSecrets,
+  verifyLockedToken,
+  type LockExpectation,
+} from './lock.ts';
 import type { CustodyMint, MintProofState } from './mint.ts';
 
 export type CustodyPolicy = {
@@ -102,7 +106,8 @@ export class CustodyEngine {
       request.expectation,
       this.#mint
     );
-    const duplicate = (await this.#store.all()).find(
+    const records = await this.#backfillFingerprints(await this.#store.all());
+    const duplicate = records.find(
       (record) =>
         record.coordinationId !== request.expectation.coordinationId &&
         (record.token === request.token ||
@@ -131,6 +136,29 @@ export class CustodyEngine {
     };
     await this.#store.append(record);
     return record;
+  }
+
+  async #backfillFingerprints(
+    records: readonly CustodyRecord[]
+  ): Promise<readonly CustodyRecord[]> {
+    const migrated: CustodyRecord[] = [];
+    for (const record of records) {
+      if (record.tokenFingerprint !== undefined) {
+        migrated.push(record);
+        continue;
+      }
+      const inspected = this.#mint.inspectToken(record.token);
+      const next: CustodyRecord = {
+        ...record,
+        revision: record.revision + 1,
+        tokenFingerprint: fingerprintProofSecrets(
+          inspected.proofs.map((proof) => proof.secret)
+        ),
+      };
+      await this.#store.append(next);
+      migrated.push(next);
+    }
+    return migrated;
   }
 
   async settle(input: {

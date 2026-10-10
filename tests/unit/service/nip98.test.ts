@@ -78,6 +78,28 @@ describe('NIP-98 authentication', () => {
     ).toBe(OPERATOR.pubkey);
   });
 
+  it('keeps a future-dated authorization marked used through its full window', () => {
+    const authenticator = new Nip98Authenticator();
+    const authorization = auth({ body, createdAt: now + 60 });
+    authenticator.authenticate({
+      authorization,
+      method: 'POST',
+      url,
+      body,
+      now,
+    });
+
+    expect(() =>
+      authenticator.authenticate({
+        authorization,
+        method: 'POST',
+        url,
+        body,
+        now: now + 61,
+      })
+    ).toThrow(/authentication/);
+  });
+
   it('rejects a forged authorization signature', () => {
     const encoded = auth({ body }).slice('Nostr '.length);
     const event = JSON.parse(
@@ -100,10 +122,14 @@ describe('NIP-98 authentication', () => {
   });
 });
 
-function auth(input: { body?: Uint8Array; method?: string }): string {
+function auth(input: {
+  body?: Uint8Array;
+  method?: string;
+  createdAt?: number;
+}): string {
   const event = signer.sign({
     kind: KIND_HTTP_AUTH,
-    created_at: now,
+    created_at: input.createdAt ?? now,
     tags: [
       ['u', url],
       ['method', input.method ?? 'POST'],

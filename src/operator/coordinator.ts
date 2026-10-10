@@ -150,14 +150,27 @@ export class CoordinationOperator {
   }
 
   async tick(now: number): Promise<void> {
+    let firstError: Error | undefined;
     for (const id of this.#coordinations.keys()) {
-      await this.#exclusive(id, () => this.#evaluate(id, now));
+      try {
+        await this.#exclusive(id, () => this.#evaluate(id, now));
+      } catch (error) {
+        firstError ??=
+          error instanceof Error
+            ? error
+            : new EscrowError(
+                'storage_unavailable',
+                'coordination evaluation failed'
+              );
+      }
     }
+    if (firstError !== undefined) throw firstError;
   }
 
   async createQuote(
     request: QuoteRequestBody,
-    createdAt: number
+    createdAt: number,
+    caller: string
   ): Promise<SignedQuote> {
     const signed = createSignedQuote({
       request: {
@@ -171,7 +184,7 @@ export class CoordinationOperator {
       createdAt,
       networkCostSats: this.#policy.quoteNetworkCostSats,
     });
-    await this.#store.putQuote(signed);
+    await this.#store.putQuote(signed, caller, createdAt);
     return signed;
   }
 
@@ -385,6 +398,7 @@ export class CoordinationOperator {
     ) {
       return;
     }
+    await this.#store.bindQuote(commitment.digest, event.id);
 
     const existing = await this.#relay.query([
       { kinds: [KIND_COORDINATION_ACTION], '#e': [event.id] },
@@ -411,15 +425,44 @@ export class CoordinationOperator {
         }).catch(this.#onError);
       }
     );
+    const caughtUp = await this.#relay.query([
+      { kinds: [KIND_COORDINATION_ACTION], '#e': [event.id] },
+    ]);
+    for (const action of caughtUp) {
+      coordination.actions.set(action.id, action);
+    }
     await this.#exclusive(event.id, () => this.#evaluate(event.id, now));
   }
 
   async #evaluate(coordinationId: string, now: number): Promise<void> {
     const coordination = this.#requireCoordination(coordinationId);
     let state = this.#derive(coordination, now);
-    if (state.terminal || state.disputed || state.forked !== null) return;
-
     let record = await this.#custodyStore.get(coordinationId);
+    const publicChainFrozen =
+      state.terminal || state.disputed || state.forked !== null;
+
+    if (record?.status === 'held' && now >= record.locktime) {
+      record = await this.#custody.observeExpiry({ coordinationId, now });
+      if (record.overlay === 'expired_recovery_available') {
+        await this.#deliver(
+          `expiry:${coordinationId}`,
+          this.#roles(coordination).bitcoinProvider,
+          {
+            version: 1,
+            type: 'expired_recovery_material',
+            coordination_id: coordinationId,
+            token: record.token,
+          }
+        );
+        await this.#notifyParticipants(coordination, 'custody_expired', now);
+        if (!publicChainFrozen && state.facts.refundAuthorized) {
+          await this.#publishAction(coordination, 'core/refund', now);
+        }
+      }
+      return;
+    }
+    if (publicChainFrozen) return;
+
     if (
       record?.status === 'held' &&
       state.facts.accepted &&
@@ -466,27 +509,6 @@ export class CoordinationOperator {
         }
       );
       await this.#publishAction(coordination, 'core/settle', now);
-      return;
-    }
-
-    if (now >= record.locktime) {
-      record = await this.#custody.observeExpiry({ coordinationId, now });
-      if (record.overlay === 'expired_recovery_available') {
-        await this.#deliver(
-          `expiry:${coordinationId}`,
-          this.#roles(coordination).bitcoinProvider,
-          {
-            version: 1,
-            type: 'expired_recovery_material',
-            coordination_id: coordinationId,
-            token: record.token,
-          }
-        );
-        await this.#notifyParticipants(coordination, 'custody_expired', now);
-        if (state.facts.refundAuthorized) {
-          await this.#publishAction(coordination, 'core/refund', now);
-        }
-      }
       return;
     }
 

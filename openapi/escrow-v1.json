@@ -93,6 +93,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
           "422": { "$ref": "#/components/responses/InvalidRequest" }
         }
       }
@@ -254,6 +255,14 @@
     "responses": {
       "Unauthorized": {
         "description": "NIP-98 authentication failed",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Quote creation quota exceeded",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/Error" }

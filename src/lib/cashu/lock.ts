@@ -128,14 +128,14 @@ export async function verifyLockedToken(
     grossSats: inspected.amount,
     inputFeeSats: inspected.inputFee,
     proofCount: inspected.proofs.length,
-    tokenFingerprint: fingerprint(
+    tokenFingerprint: fingerprintProofSecrets(
       inspected.proofs.map((proof) => proof.secret)
     ),
     locktime: commonLocktime as number,
   };
 }
 
-function fingerprint(secrets: readonly unknown[]): string {
+export function fingerprintProofSecrets(secrets: readonly unknown[]): string {
   const canonical = secrets.map((secret) => JSON.stringify(secret)).sort();
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }

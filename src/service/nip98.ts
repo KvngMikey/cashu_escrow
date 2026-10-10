@@ -65,7 +65,7 @@ export class Nip98Authenticator {
       }
     }
 
-    this.#used.set(event.id, request.now + AUTH_WINDOW_SECONDS);
+    this.#used.set(event.id, event.created_at + AUTH_WINDOW_SECONDS);
     return event.pubkey;
   }
 

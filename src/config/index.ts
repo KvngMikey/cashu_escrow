@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { resolve } from 'node:path';
 
 import { EscrowError } from '../lib/errors.ts';
 import { HttpUrl, HttpsUrl, MAX_SATS, parseUrl } from '../lib/primitives.ts';
@@ -125,6 +126,12 @@ export function loadConfig(
     throw new EscrowError(
       'config_invalid',
       'operator minimum fee exceeds the minimum coordination amount'
+    );
+  }
+  if (resolve(env.CUSTODY_STORE_PATH) === resolve(env.OPERATOR_STORE_PATH)) {
+    throw new EscrowError(
+      'config_invalid',
+      'custody and operator store paths must differ'
     );
   }
 

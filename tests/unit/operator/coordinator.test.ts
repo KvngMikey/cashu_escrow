@@ -421,6 +421,33 @@ describe('CoordinationOperator', () => {
     ).resolves.toMatchObject({ kind: 'expired_recovery_material' });
   });
 
+  it('exposes private expiry recovery while a dispute freezes the public chain', async () => {
+    const setup = await createSetup();
+    await fund(setup);
+    await publishAction(setup, {
+      signer: setup.agentSigner,
+      action: 'core/open_dispute',
+      prev: lastAction(setup.pool, 'core/secure')!.id,
+      at: T0 + 100,
+      data: { class: 'timeout' },
+    });
+
+    await setup.operator.tick(TIMES.locktime);
+
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'held',
+      overlay: 'expired_recovery_available',
+    });
+    expect(lastAction(setup.pool, 'core/refund')).toBeUndefined();
+    await expect(
+      setup.operator.refund({
+        coordinationId: setup.root.id,
+        caller: CUSTOMER.pubkey,
+        now: TIMES.locktime,
+      })
+    ).resolves.toMatchObject({ kind: 'expired_recovery_material' });
+  });
+
   it('publishes a late authorized refund only while the original proofs remain unspent', async () => {
     const available = await createSetup();
     await fund(available);
@@ -693,7 +720,8 @@ async function createSetup(
       gross_sats: 1_000,
       payout_type: payoutType,
     },
-    T0
+    T0,
+    OPERATOR.pubkey
   );
   const descriptor = buildDescriptorEvent({
     signer: operatorSigner,
@@ -733,7 +761,7 @@ async function createSetup(
         },
         quote: {
           algorithm: 'sha256-bytes@1',
-          digest: await operatorStore.putQuote(quote),
+          digest: await operatorStore.putQuote(quote, OPERATOR.pubkey, T0),
         },
       },
     }),

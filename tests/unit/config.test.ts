@@ -85,6 +85,21 @@ describe('configuration', () => {
     expect(isEscrowError(failure) && failure.category).toBe('config_invalid');
   });
 
+  it('rejects custody and operator journals that resolve to the same file', () => {
+    const failure = capture(() =>
+      loadConfig({
+        ...environment(),
+        CUSTODY_STORE_PATH: './data/../data/shared.enc',
+        OPERATOR_STORE_PATH: './data/shared.enc',
+      })
+    );
+
+    expect(isEscrowError(failure) && failure.category).toBe('config_invalid');
+    expect(isEscrowError(failure) && failure.message).toMatch(
+      /paths must differ/
+    );
+  });
+
   it('does not coerce arbitrary strings to true', () => {
     const failure = capture(() =>
       loadConfig({ ...environment(), FEES_ENABLED: 'yes' })

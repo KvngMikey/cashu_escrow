@@ -93,21 +93,34 @@ export class EncryptedCustodyStore implements CustodyStore {
     }
 
     const current = new Map<string, CustodyRecord>();
+    const lines = contents.split('\n');
+    const finalLineIsUnframed = !contents.endsWith('\n');
+    let discardedTail = false;
     try {
-      for (const rawLine of contents.split('\n')) {
+      for (const [index, rawLine] of lines.entries()) {
         if (rawLine.length === 0) continue;
-        const line = JournalLine.parse(JSON.parse(rawLine));
-        const decipher = createDecipheriv(
-          'aes-256-gcm',
-          this.#key,
-          Buffer.from(line.nonce, 'hex')
-        );
-        decipher.setAuthTag(Buffer.from(line.tag, 'hex'));
-        const plaintext = Buffer.concat([
-          decipher.update(Buffer.from(line.ciphertext, 'base64')),
-          decipher.final(),
-        ]).toString('utf8');
-        const record = StoredRecord.parse(JSON.parse(plaintext));
+        let record: CustodyRecord;
+        try {
+          const line = JournalLine.parse(JSON.parse(rawLine));
+          const decipher = createDecipheriv(
+            'aes-256-gcm',
+            this.#key,
+            Buffer.from(line.nonce, 'hex')
+          );
+          decipher.setAuthTag(Buffer.from(line.tag, 'hex'));
+          const plaintext = Buffer.concat([
+            decipher.update(Buffer.from(line.ciphertext, 'base64')),
+            decipher.final(),
+          ]).toString('utf8');
+          record = StoredRecord.parse(JSON.parse(plaintext));
+        } catch (error) {
+          if (finalLineIsUnframed && index === lines.length - 1) {
+            await repairUnframedTail(this.#path, contents, rawLine);
+            discardedTail = true;
+            break;
+          }
+          throw error;
+        }
         const previous = current.get(record.coordinationId);
         if (
           previous !== undefined &&
@@ -117,6 +130,9 @@ export class EncryptedCustodyStore implements CustodyStore {
         }
         if (previous === undefined && record.revision !== 1) throw new Error();
         current.set(record.coordinationId, record);
+      }
+      if (finalLineIsUnframed && !discardedTail && lines.at(-1)?.length !== 0) {
+        await frameValidTail(this.#path);
       }
     } catch {
       throw storageError('custody store is corrupt or uses the wrong key');
@@ -183,6 +199,31 @@ export class EncryptedCustodyStore implements CustodyStore {
     } finally {
       release();
     }
+  }
+}
+
+async function repairUnframedTail(
+  path: string,
+  contents: string,
+  tail: string
+): Promise<void> {
+  const length = Buffer.byteLength(contents.slice(0, -tail.length), 'utf8');
+  const handle = await open(path, 'r+');
+  try {
+    await handle.truncate(length);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function frameValidTail(path: string): Promise<void> {
+  const handle = await open(path, 'a');
+  try {
+    await handle.appendFile('\n', 'utf8');
+    await handle.sync();
+  } finally {
+    await handle.close();
   }
 }
 

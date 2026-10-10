@@ -128,9 +128,11 @@ describe('CustodyEngine', () => {
     ).rejects.toMatchObject({ category: 'custody_conflict' });
   });
 
-  it('does not bind the same proofs to two coordinations', async () => {
-    const { engine } = setup();
-    await hold(engine);
+  it('backfills legacy fingerprints before checking another token encoding', async () => {
+    const { engine, store } = setup();
+    const held = await hold(engine);
+    const { tokenFingerprint: _legacyMissing, ...legacy } = held;
+    store.records.set(held.coordinationId, legacy);
     await expect(
       engine.hold({
         token: 'same-proofs-different-encoding',
@@ -149,6 +151,10 @@ describe('CustodyEngine', () => {
         },
       })
     ).rejects.toMatchObject({ category: 'custody_conflict' });
+    expect(await store.get('swap-1')).toMatchObject({
+      revision: 2,
+      tokenFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 
   it('settles cashu P2PK exactly at the release boundary', async () => {

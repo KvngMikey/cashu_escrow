@@ -77,7 +77,7 @@ export class EscrowHttpService {
 
       if (request.path === '/v1/quotes' && method === 'POST') {
         const input = parseBody(QuoteRequestBody, body);
-        return json(200, await this.#operator.createQuote(input, now));
+        return json(200, await this.#operator.createQuote(input, now, caller));
       }
 
       const route = coordinationRoute(request.path);
@@ -139,7 +139,7 @@ export function startHttpServer(input: {
   port: number;
 }): Promise<Server> {
   const server = createServer((request, response) => {
-    void readRequest(request)
+    void readRequestBody(request)
       .then((body) =>
         input.service.handle({
           method: request.method ?? 'GET',
@@ -169,11 +169,15 @@ export function startHttpServer(input: {
   });
 }
 
-async function readRequest(request: IncomingMessage): Promise<Uint8Array> {
+export async function readRequestBody(
+  request: IncomingMessage
+): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const chunks: Uint8Array[] = [];
     let size = 0;
+    let rejected = false;
     request.on('data', (value: unknown) => {
+      if (rejected) return;
       const chunk =
         typeof value === 'string'
           ? Buffer.from(value)
@@ -181,19 +185,23 @@ async function readRequest(request: IncomingMessage): Promise<Uint8Array> {
             ? value
             : null;
       if (chunk === null) {
+        rejected = true;
         reject(new EscrowError('content_invalid', 'request body is invalid'));
-        request.destroy();
+        request.resume();
         return;
       }
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
+        rejected = true;
         reject(new EscrowError('content_invalid', 'request body is too large'));
-        request.destroy();
+        request.resume();
         return;
       }
       chunks.push(chunk);
     });
-    request.once('end', () => resolve(Buffer.concat(chunks)));
+    request.once('end', () => {
+      if (!rejected) resolve(Buffer.concat(chunks));
+    });
     request.once('error', reject);
   });
 }
@@ -231,6 +239,9 @@ function mapError(error: unknown): ServiceResponse {
   if (error.category === 'request_unauthorized') {
     return errorResponse(401, coordinationId);
   }
+  if (error.category === 'rate_limited') {
+    return errorResponse(429, coordinationId);
+  }
   if (error.category === 'coordination_not_found') {
     return errorResponse(404, coordinationId);
   }
@@ -257,13 +268,15 @@ function errorResponse(
     category:
       status === 401
         ? 'request_unauthorized'
-        : status === 404
-          ? 'coordination_not_found'
-          : status === 422
-            ? 'content_invalid'
-            : status === 409
-              ? 'custody_conflict'
-              : 'service_unavailable',
+        : status === 429
+          ? 'rate_limited'
+          : status === 404
+            ? 'coordination_not_found'
+            : status === 422
+              ? 'content_invalid'
+              : status === 409
+                ? 'custody_conflict'
+                : 'service_unavailable',
     coordination_id: coordinationId ?? null,
   });
 }

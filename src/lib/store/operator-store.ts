@@ -380,20 +380,9 @@ export class EncryptedOperatorStore implements OperatorStore {
     await this.#exclusive(async () => {
       const state = await this.#read();
       const existing = state.forks.get(fork.coordinationId);
-      if (existing !== undefined) {
-        if (
-          existing.predecessor !== fork.predecessor ||
-          JSON.stringify(existing.branches) !== JSON.stringify(fork.branches)
-        ) {
-          conflict(
-            'coordination already has different fork evidence',
-            fork.coordinationId
-          );
-        }
-        // The first complete record is sufficient evidence. Later relay events
-        // must not turn an already persisted fork into a store conflict.
-        return;
-      }
+      // The first complete record is sufficient evidence. Later relay catch-up
+      // must not replace it or block expiry recovery.
+      if (existing !== undefined) return;
       await this.#append({
         revision: state.revision + 1,
         type: 'fork',

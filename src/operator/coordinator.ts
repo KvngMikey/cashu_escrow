@@ -446,11 +446,17 @@ export class CoordinationOperator {
     let state = this.#derive(coordination, now);
     let record = await this.#custodyStore.get(coordinationId);
     if (state.forked !== null) {
+      const evidenceIds = new Set([
+        ...state.applied.map((action) => action.id),
+        ...state.forked.branches,
+      ]);
       await this.#store.putFork({
         coordinationId,
         predecessor: state.forked.predecessor,
         branches: state.forked.branches,
-        actions: [...coordination.actions.values()],
+        actions: [...coordination.actions.values()].filter((action) =>
+          evidenceIds.has(action.id)
+        ),
       });
     }
     const publicChainFrozen =

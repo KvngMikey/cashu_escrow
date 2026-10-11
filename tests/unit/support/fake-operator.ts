@@ -93,15 +93,7 @@ export class MemoryOperatorStore implements OperatorStore {
 
   putFork(fork: PersistedFork): Promise<void> {
     const existing = this.forks.get(fork.coordinationId);
-    if (existing !== undefined) {
-      if (
-        existing.predecessor !== fork.predecessor ||
-        JSON.stringify(existing.branches) !== JSON.stringify(fork.branches)
-      ) {
-        return Promise.reject(new Error('fork conflict'));
-      }
-      return Promise.resolve();
-    }
+    if (existing !== undefined) return Promise.resolve();
     this.forks.set(fork.coordinationId, structuredClone(fork));
     return Promise.resolve();
   }

@@ -154,12 +154,13 @@ describe('EncryptedOperatorStore', () => {
     await expect(
       restarted.putFork({
         coordinationId,
-        predecessor,
-        branches: [first.id, second.id],
-        actions: [first, second, later],
+        predecessor: 'dd'.repeat(32),
+        branches: [first.id, later.id],
+        actions: [first, later],
       })
     ).resolves.toBeUndefined();
     await expect(restarted.getFork(coordinationId)).resolves.toMatchObject({
+      predecessor,
       actions: expect.not.arrayContaining([
         expect.objectContaining({ id: later.id }),
       ]),

@@ -16,6 +16,8 @@ try {
     console.error(
       `${error.category}${error.swapId === undefined ? '' : ` coordination=${error.swapId}`}`
     );
+  } else if (error instanceof Error && error.message === usage()) {
+    console.error(error.message);
   } else {
     console.error('resolver failure');
   }

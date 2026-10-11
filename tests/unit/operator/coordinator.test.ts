@@ -311,7 +311,15 @@ describe('CoordinationOperator', () => {
       at: T0 + 41,
       data: { payment_reference: 'fork-b' },
     });
+    const unrelated = actionEvent(setup, {
+      signer: setup.agentSigner,
+      action: ACTION_FIAT_SENT,
+      prev: 'ee'.repeat(32),
+      at: T0 + 39,
+      data: { payment_reference: 'unrelated' },
+    });
     setup.clock.now = T0 + 41;
+    setup.pool.seed(unrelated);
     setup.pool.seed(first);
     setup.pool.seed(second);
     await setup.operator.tick(T0 + 41);
@@ -333,6 +341,26 @@ describe('CoordinationOperator', () => {
     expect(setup.operatorStore.forks.get(setup.root.id)).toMatchObject({
       predecessor: secure.id,
       branches: expect.arrayContaining([first.id, second.id]),
+      actions: expect.not.arrayContaining([
+        expect.objectContaining({ id: unrelated.id }),
+      ]),
+    });
+
+    const third = actionEvent(setup, {
+      signer: setup.agentSigner,
+      action: ACTION_FIAT_SENT,
+      prev: secure.id,
+      at: T0 + 42,
+      data: { payment_reference: 'fork-c' },
+    });
+    setup.clock.now = T0 + 42;
+    setup.pool.seed(third);
+    await expect(setup.operator.tick(T0 + 42)).resolves.toBeUndefined();
+    expect(setup.operatorStore.forks.get(setup.root.id)).toMatchObject({
+      branches: expect.arrayContaining([first.id, second.id]),
+      actions: expect.not.arrayContaining([
+        expect.objectContaining({ id: third.id }),
+      ]),
     });
 
     await setup.operator.tick(TIMES.locktime);

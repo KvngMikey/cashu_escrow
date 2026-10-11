@@ -7,6 +7,7 @@ import {
 import type {
   OperatorStore,
   PayoutTarget,
+  PersistedFork,
 } from '../../../src/lib/store/operator-store.ts';
 import { OPERATOR } from './keys.ts';
 
@@ -19,6 +20,7 @@ export class MemoryOperatorStore implements OperatorStore {
     string,
     { key: string; event: NostrEvent; published: boolean }
   >();
+  readonly forks = new Map<string, PersistedFork>();
 
   initialize(): Promise<void> {
     return Promise.resolve();
@@ -87,5 +89,24 @@ export class MemoryOperatorStore implements OperatorStore {
     if (item === undefined) return Promise.reject(new Error('missing outbox'));
     this.outbox.set(key, { ...item, published: true });
     return Promise.resolve();
+  }
+
+  putFork(fork: PersistedFork): Promise<void> {
+    const existing = this.forks.get(fork.coordinationId);
+    if (existing !== undefined) {
+      if (
+        existing.predecessor !== fork.predecessor ||
+        JSON.stringify(existing.branches) !== JSON.stringify(fork.branches)
+      ) {
+        return Promise.reject(new Error('fork conflict'));
+      }
+      return Promise.resolve();
+    }
+    this.forks.set(fork.coordinationId, structuredClone(fork));
+    return Promise.resolve();
+  }
+
+  getFork(coordinationId: string): Promise<PersistedFork | undefined> {
+    return Promise.resolve(this.forks.get(coordinationId));
   }
 }

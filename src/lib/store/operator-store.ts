@@ -84,12 +84,24 @@ const OutboxEntry = z
   })
   .strict();
 
+const ForkEntry = z
+  .object({
+    revision: z.number().int().positive(),
+    type: z.literal('fork'),
+    coordinationId: HexEventId,
+    predecessor: HexEventId,
+    branches: z.array(HexEventId).min(2),
+    actions: z.array(StoredEvent).min(2),
+  })
+  .strict();
+
 const StoreEntry = z.discriminatedUnion('type', [
   QuoteEntry,
   QuoteBindingEntry,
   PayoutEntry,
   FundingInstructionEntry,
   OutboxEntry,
+  ForkEntry,
 ]);
 
 const JournalLine = z
@@ -105,6 +117,13 @@ type OutboxItem = {
   key: string;
   event: NostrEvent;
   published: boolean;
+};
+
+export type PersistedFork = {
+  coordinationId: string;
+  predecessor: string;
+  branches: readonly string[];
+  actions: readonly NostrEvent[];
 };
 
 export interface OperatorStore {
@@ -124,6 +143,8 @@ export interface OperatorStore {
   ): Promise<number | undefined>;
   stageOutbox(key: string, event: NostrEvent): Promise<OutboxItem>;
   markOutboxPublished(key: string): Promise<void>;
+  putFork(fork: PersistedFork): Promise<void>;
+  getFork(coordinationId: string): Promise<PersistedFork | undefined>;
 }
 
 type StoreState = {
@@ -132,6 +153,7 @@ type StoreState = {
   payouts: Map<string, PayoutTarget>;
   fundingLocktimes: Map<string, number>;
   outbox: Map<string, OutboxItem>;
+  forks: Map<string, PersistedFork>;
 };
 
 type StoredQuote = {
@@ -334,6 +356,60 @@ export class EncryptedOperatorStore implements OperatorStore {
     });
   }
 
+  async putFork(input: PersistedFork): Promise<void> {
+    const parsed = ForkEntry.omit({ revision: true, type: true }).safeParse(
+      input
+    );
+    if (!parsed.success) invalid('fork evidence is invalid');
+    const branches = [...new Set(parsed.data.branches)].sort();
+    const actions = [...parsed.data.actions].sort((left, right) =>
+      left.id.localeCompare(right.id)
+    );
+    if (
+      branches.length < 2 ||
+      branches.some((branch) => !actions.some((action) => action.id === branch))
+    ) {
+      invalid('fork evidence is incomplete');
+    }
+    const fork: PersistedFork = {
+      coordinationId: parsed.data.coordinationId,
+      predecessor: parsed.data.predecessor,
+      branches,
+      actions,
+    };
+    await this.#exclusive(async () => {
+      const state = await this.#read();
+      const existing = state.forks.get(fork.coordinationId);
+      if (existing !== undefined) {
+        if (
+          existing.predecessor !== fork.predecessor ||
+          JSON.stringify(existing.branches) !== JSON.stringify(fork.branches)
+        ) {
+          conflict(
+            'coordination already has different fork evidence',
+            fork.coordinationId
+          );
+        }
+        // The first complete record is sufficient evidence. Later relay events
+        // must not turn an already persisted fork into a store conflict.
+        return;
+      }
+      await this.#append({
+        revision: state.revision + 1,
+        type: 'fork',
+        ...fork,
+        branches: [...fork.branches],
+        actions: [...fork.actions],
+      });
+    });
+  }
+
+  async getFork(coordinationId: string): Promise<PersistedFork | undefined> {
+    return this.#exclusive(async () =>
+      (await this.#read()).forks.get(coordinationId)
+    );
+  }
+
   async #read(): Promise<StoreState> {
     let contents: string;
     try {
@@ -402,6 +478,14 @@ export class EncryptedOperatorStore implements OperatorStore {
             published: entry.published,
           });
         }
+        if (entry.type === 'fork') {
+          state.forks.set(entry.coordinationId, {
+            coordinationId: entry.coordinationId,
+            predecessor: entry.predecessor,
+            branches: entry.branches,
+            actions: entry.actions,
+          });
+        }
       }
       if (finalLineIsUnframed && !discardedTail && lines.at(-1)?.length !== 0) {
         await frameValidTail(this.#path);
@@ -460,6 +544,14 @@ export class EncryptedOperatorStore implements OperatorStore {
     }
     for (const item of state.outbox.values()) {
       add({ type: 'outbox', ...item });
+    }
+    for (const fork of state.forks.values()) {
+      add({
+        type: 'fork',
+        ...fork,
+        branches: [...fork.branches],
+        actions: [...fork.actions],
+      });
     }
 
     const temporaryPath = `${this.#path}.${randomBytes(8).toString('hex')}.tmp`;
@@ -561,6 +653,7 @@ function emptyState(): StoreState {
     payouts: new Map(),
     fundingLocktimes: new Map(),
     outbox: new Map(),
+    forks: new Map(),
   };
 }
 

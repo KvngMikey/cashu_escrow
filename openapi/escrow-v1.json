@@ -480,7 +480,12 @@
       "CoordinationStatus": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["coordination_id", "public_state", "custody_overlay"],
+        "required": [
+          "coordination_id",
+          "public_state",
+          "custody_overlay",
+          "fork"
+        ],
         "properties": {
           "coordination_id": { "$ref": "#/components/schemas/EventId" },
           "public_state": { "type": "string" },
@@ -492,6 +497,25 @@
               "expired_spent_unattributed",
               "settlement_unfulfillable",
               null
+            ]
+          },
+          "fork": {
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["predecessor", "branches"],
+                "properties": {
+                  "predecessor": { "$ref": "#/components/schemas/EventId" },
+                  "branches": {
+                    "type": "array",
+                    "minItems": 2,
+                    "uniqueItems": true,
+                    "items": { "$ref": "#/components/schemas/EventId" }
+                  }
+                }
+              }
             ]
           }
         }

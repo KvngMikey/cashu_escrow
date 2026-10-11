@@ -53,6 +53,19 @@ export const CoordinationStatus = z
         'settlement_unfulfillable',
       ])
       .nullable(),
+    fork: z
+      .object({
+        predecessor: CoordinationId,
+        branches: z
+          .array(CoordinationId)
+          .min(2)
+          .refine(
+            (branches) => new Set(branches).size === branches.length,
+            'fork branches must be unique'
+          ),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 

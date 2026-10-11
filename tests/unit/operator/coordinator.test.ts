@@ -311,7 +311,15 @@ describe('CoordinationOperator', () => {
       at: T0 + 41,
       data: { payment_reference: 'fork-b' },
     });
+    const unrelated = actionEvent(setup, {
+      signer: setup.agentSigner,
+      action: ACTION_FIAT_SENT,
+      prev: 'ee'.repeat(32),
+      at: T0 + 39,
+      data: { payment_reference: 'unrelated' },
+    });
     setup.clock.now = T0 + 41;
+    setup.pool.seed(unrelated);
     setup.pool.seed(first);
     setup.pool.seed(second);
     await setup.operator.tick(T0 + 41);
@@ -323,7 +331,220 @@ describe('CoordinationOperator', () => {
     expect(lastAction(setup.pool, 'core/refund')).toBeUndefined();
     expect(
       await setup.operator.status(setup.root.id, CUSTOMER.pubkey)
-    ).toMatchObject({ public_state: 'forked' });
+    ).toMatchObject({
+      public_state: 'forked',
+      fork: {
+        predecessor: secure.id,
+        branches: expect.arrayContaining([first.id, second.id]),
+      },
+    });
+    expect(setup.operatorStore.forks.get(setup.root.id)).toMatchObject({
+      predecessor: secure.id,
+      branches: expect.arrayContaining([first.id, second.id]),
+      actions: expect.not.arrayContaining([
+        expect.objectContaining({ id: unrelated.id }),
+      ]),
+    });
+
+    const third = actionEvent(setup, {
+      signer: setup.agentSigner,
+      action: ACTION_FIAT_SENT,
+      prev: secure.id,
+      at: T0 + 42,
+      data: { payment_reference: 'fork-c' },
+    });
+    setup.clock.now = T0 + 42;
+    setup.pool.seed(third);
+    await expect(setup.operator.tick(T0 + 42)).resolves.toBeUndefined();
+    expect(setup.operatorStore.forks.get(setup.root.id)).toMatchObject({
+      branches: expect.arrayContaining([first.id, second.id]),
+      actions: expect.not.arrayContaining([
+        expect.objectContaining({ id: third.id }),
+      ]),
+    });
+
+    await setup.operator.tick(TIMES.locktime);
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'held',
+      overlay: 'expired_recovery_available',
+    });
+    expect(lastAction(setup.pool, 'core/settle')).toBeUndefined();
+    expect(lastAction(setup.pool, 'core/refund')).toBeUndefined();
+  });
+
+  it('applies resolver settlement and refund effects through custody gates', async () => {
+    const settlement = await createSetup();
+    await fund(settlement);
+    await settlement.operator.putPayout({
+      coordinationId: settlement.root.id,
+      caller: AGENT.pubkey,
+      payout: { type: 'cashu_p2pk', pubkey: AGENT.pubkey },
+      now: T0 + 40,
+    });
+    const settlementDispute = await publishAction(settlement, {
+      signer: settlement.agentSigner,
+      action: 'core/open_dispute',
+      prev: lastAction(settlement.pool, 'core/secure')!.id,
+      at: T0 + 100,
+      data: { class: 'fiat_not_received' },
+    });
+    await publishAction(settlement, {
+      signer: settlement.resolverSigner,
+      action: 'core/resolve_dispute',
+      prev: settlementDispute,
+      at: T0 + 110,
+      data: {
+        policy: 'service-policy-1',
+        effect: 'authorize_settlement',
+      },
+    });
+    expect(await settlement.custodyStore.get(settlement.root.id)).toMatchObject(
+      { status: 'settled' }
+    );
+    expect(lastAction(settlement.pool, 'core/settle')).toBeDefined();
+
+    const refund = await createSetup();
+    await fund(refund);
+    const refundDispute = await publishAction(refund, {
+      signer: refund.customerSigner,
+      action: 'core/open_dispute',
+      prev: lastAction(refund.pool, 'core/secure')!.id,
+      at: T0 + 100,
+      data: { class: 'timeout' },
+    });
+    await publishAction(refund, {
+      signer: refund.resolverSigner,
+      action: 'core/resolve_dispute',
+      prev: refundDispute,
+      at: T0 + 110,
+      data: {
+        policy: 'service-policy-1',
+        effect: 'authorize_refund',
+      },
+    });
+    expect(await refund.custodyStore.get(refund.root.id)).toMatchObject({
+      status: 'refunded',
+    });
+    expect(lastAction(refund.pool, 'core/refund')).toBeDefined();
+  });
+
+  it('resumes or cancels only through a resolver effect', async () => {
+    const resumed = await createSetup();
+    await fund(resumed);
+    const dispute = await publishAction(resumed, {
+      signer: resumed.agentSigner,
+      action: 'core/open_dispute',
+      prev: lastAction(resumed.pool, 'core/secure')!.id,
+      at: T0 + 100,
+      data: { class: 'timeout' },
+    });
+    const resolution = await publishAction(resumed, {
+      signer: resumed.resolverSigner,
+      action: 'core/resolve_dispute',
+      prev: dispute,
+      at: T0 + 110,
+      data: { policy: 'service-policy-1', effect: 'resume' },
+    });
+    await publishAction(resumed, {
+      signer: resumed.agentSigner,
+      action: ACTION_FIAT_SENT,
+      prev: resolution,
+      at: T0 + 120,
+      data: { payment_reference: 'resumed-payment' },
+    });
+    await expect(
+      resumed.operator.status(resumed.root.id, CUSTOMER.pubkey)
+    ).resolves.toMatchObject({ public_state: 'fiat_sent' });
+
+    const cancelled = await createSetup();
+    await fund(cancelled);
+    const cancelledDispute = await publishAction(cancelled, {
+      signer: cancelled.customerSigner,
+      action: 'core/open_dispute',
+      prev: lastAction(cancelled.pool, 'core/secure')!.id,
+      at: T0 + 100,
+      data: { class: 'timeout' },
+    });
+    await publishAction(cancelled, {
+      signer: cancelled.resolverSigner,
+      action: 'core/resolve_dispute',
+      prev: cancelledDispute,
+      at: T0 + 110,
+      data: { policy: 'service-policy-1', effect: 'cancel' },
+    });
+    await expect(
+      cancelled.operator.status(cancelled.root.id, CUSTOMER.pubkey)
+    ).resolves.toMatchObject({ public_state: 'cancelled' });
+    expect(await cancelled.custodyStore.get(cancelled.root.id)).toMatchObject({
+      status: 'held',
+    });
+    expect(lastAction(cancelled.pool, 'core/settle')).toBeUndefined();
+    expect(lastAction(cancelled.pool, 'core/refund')).toBeUndefined();
+  });
+
+  it('blocks a settlement resolution after the release margin closes', async () => {
+    const setup = await createSetup();
+    await fund(setup);
+    await setup.operator.putPayout({
+      coordinationId: setup.root.id,
+      caller: AGENT.pubkey,
+      payout: { type: 'cashu_p2pk', pubkey: AGENT.pubkey },
+      now: T0 + 40,
+    });
+    const dispute = await publishAction(setup, {
+      signer: setup.agentSigner,
+      action: 'core/open_dispute',
+      prev: lastAction(setup.pool, 'core/secure')!.id,
+      at: T0 + 100,
+      data: { class: 'timeout' },
+    });
+    await publishAction(setup, {
+      signer: setup.resolverSigner,
+      action: 'core/resolve_dispute',
+      prev: dispute,
+      at: TIMES.locktime - 49,
+      data: {
+        policy: 'service-policy-1',
+        effect: 'authorize_settlement',
+      },
+    });
+
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'held',
+      overlay: 'settlement_unfulfillable',
+    });
+    expect(lastAction(setup.pool, 'core/settle')).toBeUndefined();
+  });
+
+  it('publishes a resolver-authorized refund after locktime recovery', async () => {
+    const setup = await createSetup();
+    await fund(setup);
+    const dispute = await publishAction(setup, {
+      signer: setup.customerSigner,
+      action: 'core/open_dispute',
+      prev: lastAction(setup.pool, 'core/secure')!.id,
+      at: T0 + 100,
+      data: { class: 'timeout' },
+    });
+
+    await setup.operator.tick(TIMES.locktime);
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'held',
+      overlay: 'expired_recovery_available',
+    });
+    expect(lastAction(setup.pool, 'core/refund')).toBeUndefined();
+
+    await publishAction(setup, {
+      signer: setup.resolverSigner,
+      action: 'core/resolve_dispute',
+      prev: dispute,
+      at: TIMES.locktime + 1,
+      data: {
+        policy: 'service-policy-1',
+        effect: 'authorize_refund',
+      },
+    });
+    expect(lastAction(setup.pool, 'core/refund')).toBeDefined();
   });
 
   it('executes an authorized pre-expiry refund and publishes only after delivery', async () => {

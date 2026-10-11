@@ -128,6 +128,49 @@ describe('EncryptedOperatorStore', () => {
     await expect(restarted.getQuote(oldKey)).resolves.toEqual(old);
   });
 
+  it('persists the first complete fork evidence across restart', async () => {
+    const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-operator-${crypto.randomUUID()}/store.jsonl`;
+    const key = signer.deriveOperatorStoreKey();
+    const store = new EncryptedOperatorStore(path, key);
+    const coordinationId = 'bb'.repeat(32);
+    const predecessor = 'cc'.repeat(32);
+    const first = signer.sign({ kind: 7301, tags: [], content: 'branch-one' });
+    const second = signer.sign({ kind: 7301, tags: [], content: 'branch-two' });
+
+    await store.putFork({
+      coordinationId,
+      predecessor,
+      branches: [second.id, first.id],
+      actions: [first, second],
+    });
+    const restarted = new EncryptedOperatorStore(path, key);
+    await expect(restarted.getFork(coordinationId)).resolves.toMatchObject({
+      coordinationId,
+      predecessor,
+      branches: [first.id, second.id].sort(),
+    });
+
+    const later = signer.sign({ kind: 7301, tags: [], content: 'later-event' });
+    await expect(
+      restarted.putFork({
+        coordinationId,
+        predecessor: 'dd'.repeat(32),
+        branches: [first.id, later.id],
+        actions: [first, later],
+      })
+    ).resolves.toBeUndefined();
+    await expect(restarted.getFork(coordinationId)).resolves.toMatchObject({
+      predecessor,
+      actions: expect.not.arrayContaining([
+        expect.objectContaining({ id: later.id }),
+      ]),
+    });
+
+    const raw = await readFile(path, 'utf8');
+    expect(raw).not.toContain('branch-one');
+    expect(raw).not.toContain('branch-two');
+  });
+
   it('rejects corruption in a newline-committed operator record', async () => {
     const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-operator-${crypto.randomUUID()}/store.jsonl`;
     const store = new EncryptedOperatorStore(

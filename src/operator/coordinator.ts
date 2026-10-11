@@ -71,6 +71,10 @@ export type SafeCoordinationStatus = {
   coordination_id: string;
   public_state: string;
   custody_overlay: CustodyRecord['overlay'] | null;
+  fork: {
+    predecessor: string;
+    branches: readonly string[];
+  } | null;
 };
 
 export type RefundPickup = {
@@ -400,11 +404,14 @@ export class CoordinationOperator {
     }
     await this.#store.bindQuote(commitment.digest, event.id);
 
+    const persistedFork = await this.#store.getFork(event.id);
     const existing = await this.#relay.query([
       { kinds: [KIND_COORDINATION_ACTION], '#e': [event.id] },
     ]);
     const actions = new Map(
-      existing.map((action) => [action.id, action] as const)
+      [...(persistedFork?.actions ?? []), ...existing].map(
+        (action) => [action.id, action] as const
+      )
     );
     const coordination: Coordination = {
       rootEvent: event,
@@ -438,6 +445,20 @@ export class CoordinationOperator {
     const coordination = this.#requireCoordination(coordinationId);
     let state = this.#derive(coordination, now);
     let record = await this.#custodyStore.get(coordinationId);
+    if (state.forked !== null) {
+      const evidenceIds = new Set([
+        ...state.applied.map((action) => action.id),
+        ...state.forked.branches,
+      ]);
+      await this.#store.putFork({
+        coordinationId,
+        predecessor: state.forked.predecessor,
+        branches: state.forked.branches,
+        actions: [...coordination.actions.values()].filter((action) =>
+          evidenceIds.has(action.id)
+        ),
+      });
+    }
     const publicChainFrozen =
       state.terminal || state.disputed || state.forked !== null;
 
@@ -668,10 +689,18 @@ export class CoordinationOperator {
     at = this.#clock()
   ): Promise<SafeCoordinationStatus> {
     const record = await this.#custodyStore.get(coordination.root.id);
+    const state = this.#derive(coordination, at);
     return {
       coordination_id: coordination.root.id,
-      public_state: this.#derive(coordination, at).state,
+      public_state: state.state,
       custody_overlay: record?.overlay ?? null,
+      fork:
+        state.forked === null
+          ? null
+          : {
+              predecessor: state.forked.predecessor,
+              branches: state.forked.branches,
+            },
     };
   }
 

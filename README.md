@@ -67,6 +67,7 @@ docker run -d -p 3338:3338 \
 | `npm run format` / `npm run format:fix` | prettier                                                       |
 | `npm run build`                         | compile to `dist/`                                             |
 | `npm run operator`                      | run the watcher and private HTTP service                       |
+| `npm run resolve`                       | publish a resolver-authorized dispute effect                   |
 | `npm run smoke`                         | run escrow coordination flows against the local relay and mint |
 | `npm run vectors:build`                 | regenerate the deterministic JSON fixtures                     |
 | `npm run publish:descriptor`            | publish and verify the escrow descriptor                       |
@@ -76,6 +77,10 @@ docker run -d -p 3338:3338 \
 The publisher scripts read `.env`; [.env.example](.env.example) lists every
 required value. Each script reads its event back from the configured relay and
 fails if the stored event does not validate.
+
+Run `npm run resolve -- --coordination <id> --effect <effect> --policy <id>`
+to publish a resolver command. Valid effects are `resume`,
+`authorize_settlement`, `authorize_refund`, and `cancel`.
 
 The smoke command uses `ws://127.0.0.1:17000` and
 `http://127.0.0.1:3338` by default. Override them with `TEST_RELAY_URL` and

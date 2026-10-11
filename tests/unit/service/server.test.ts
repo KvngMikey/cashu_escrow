@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { EscrowError } from '../../../src/lib/errors.ts';
 import { createSigner } from '../../../src/lib/pontmore/signer.ts';
 import { KIND_HTTP_AUTH } from '../../../src/service/nip98.ts';
+import { CoordinationStatus } from '../../../src/service/schemas.ts';
 import {
   EscrowHttpService,
   readRequestBody,
@@ -18,6 +19,30 @@ const baseUrl = 'https://escrow.example.com';
 const signer = createSigner(OPERATOR.nsec);
 
 describe('EscrowHttpService', () => {
+  it('accepts status responses with nullable fork evidence', () => {
+    const coordinationId = 'aa'.repeat(32);
+    const base = {
+      coordination_id: coordinationId,
+      public_state: 'forked',
+      custody_overlay: null,
+    };
+
+    expect(CoordinationStatus.parse({ ...base, fork: null })).toMatchObject({
+      fork: null,
+    });
+    expect(
+      CoordinationStatus.parse({
+        ...base,
+        fork: {
+          predecessor: 'bb'.repeat(32),
+          branches: ['cc'.repeat(32), 'dd'.repeat(32)],
+        },
+      })
+    ).toMatchObject({
+      fork: { predecessor: 'bb'.repeat(32) },
+    });
+  });
+
   it('serves OpenAPI without authentication', async () => {
     const { service } = setup();
     await expect(

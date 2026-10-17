@@ -1,6 +1,6 @@
 {
   "name": "cashu_escrow",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Cashu ecash escrow operator for Pontmore (PIP-01 cashu_escrow)",
   "license": "MIT",
   "type": "module",

@@ -94,7 +94,9 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "429": { "$ref": "#/components/responses/RateLimited" },
-          "422": { "$ref": "#/components/responses/InvalidRequest" }
+          "422": { "$ref": "#/components/responses/InvalidRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
     },
@@ -115,8 +117,11 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
-          "409": { "$ref": "#/components/responses/Conflict" }
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
     },
@@ -144,9 +149,12 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "409": { "$ref": "#/components/responses/Conflict" },
-          "422": { "$ref": "#/components/responses/InvalidRequest" }
+          "422": { "$ref": "#/components/responses/InvalidRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
     },
@@ -167,9 +175,12 @@
         "responses": {
           "204": { "description": "Payout target accepted" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "409": { "$ref": "#/components/responses/Conflict" },
-          "422": { "$ref": "#/components/responses/InvalidRequest" }
+          "422": { "$ref": "#/components/responses/InvalidRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
     },
@@ -188,7 +199,10 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
     },
@@ -208,8 +222,11 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
-          "409": { "$ref": "#/components/responses/Conflict" }
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
     },
@@ -261,6 +278,14 @@
           }
         }
       },
+      "Forbidden": {
+        "description": "The authenticated signer is not permitted to perform this operation",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
       "RateLimited": {
         "description": "Quote creation quota exceeded",
         "content": {
@@ -292,6 +317,22 @@
             "schema": { "$ref": "#/components/schemas/Error" }
           }
         }
+      },
+      "InternalError": {
+        "description": "Unexpected internal failure with details redacted",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "A required relay, mint, Lightning service, or durable store is unavailable",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
       }
     },
     "schemas": {
@@ -300,8 +341,22 @@
         "additionalProperties": false,
         "required": ["category", "coordination_id"],
         "properties": {
-          "category": { "type": "string" },
-          "coordination_id": { "type": ["string", "null"] }
+          "category": {
+            "type": "string",
+            "enum": [
+              "request_unauthorized",
+              "request_forbidden",
+              "rate_limited",
+              "coordination_not_found",
+              "content_invalid",
+              "custody_conflict",
+              "service_unavailable"
+            ]
+          },
+          "coordination_id": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9a-f]{64}$"
+          }
         }
       },
       "QuoteRequest": {

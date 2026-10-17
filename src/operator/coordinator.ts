@@ -768,7 +768,7 @@ export class CoordinationOperator {
   ): void {
     if (!allowed.includes(caller.toLowerCase())) {
       throw new EscrowError(
-        'request_unauthorized',
+        'request_forbidden',
         'request signer is not authorized for this coordination',
         { swapId: coordination.root.id }
       );

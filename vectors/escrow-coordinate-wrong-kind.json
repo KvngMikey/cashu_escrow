@@ -2,7 +2,7 @@
   "name": "escrow-coordinate-wrong-kind",
   "description": "An escrow coordinate must be kind 30361; a 30360 address is not a descriptor.",
   "spec": {
-    "commit": "d9a1eb3",
+    "commit": "edcf1370e7e646574021709cc9b186d96377280a",
     "pip02_version": 2,
     "profile": "pontmore/swap@1"
   },

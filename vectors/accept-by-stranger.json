@@ -2,7 +2,7 @@
   "name": "accept-by-stranger",
   "description": "Only the non-proposing application participant may accept.",
   "spec": {
-    "commit": "d9a1eb3",
+    "commit": "edcf1370e7e646574021709cc9b186d96377280a",
     "pip02_version": 2,
     "profile": "pontmore/swap@1"
   },

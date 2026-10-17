@@ -72,6 +72,14 @@ describe('CoordinationOperator', () => {
     expect(lastAction(setup.pool, 'core/secure')).toBeUndefined();
   });
 
+  it('rejects an authenticated participant with the wrong operation role', async () => {
+    const setup = await createSetup();
+
+    await expect(
+      setup.operator.fundingInstructions(setup.root.id, AGENT.pubkey, T0 + 29)
+    ).rejects.toMatchObject({ category: 'request_forbidden' });
+  });
+
   it('holds, secures, settles, delivers, and publishes in chain order', async () => {
     const setup = await createSetup();
     await setup.operator.fundingInstructions(

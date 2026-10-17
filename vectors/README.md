@@ -1,8 +1,9 @@
 # `pontmore/swap@1` conformance vectors
 
 Shared vectors for the PIP-02 v2 coordination kernel and the
-`pontmore/swap@1` profile. Written against **pontmore/protocol `d9a1eb3`**
-(PIP-00, PIP-01, PIP-02 v2, `profiles/swap-v1.md`).
+`pontmore/swap@1` profile. Written against
+**pontmore/protocol `edcf1370e7e646574021709cc9b186d96377280a`** (PIP-00,
+PIP-01, PIP-02 v2, `profiles/swap-v1.md`).
 
 These 65 files are portable test fixtures: input events plus an expected result.
 For example, `settle-btc-to-fiat` expects `settled`; `fork-at-refund` expects
@@ -13,9 +14,10 @@ the JSON looks repetitive and large: a Rust or Python implementation can use one
 file without our TypeScript builders. The forged-duplicate cases deliberately
 contain an invalid signature. No real keys, money or network services are used.
 
-Review the case definitions in `scripts/build-vectors.ts` instead of reading repeated hashes.
-`npm run vectors:build` regenerates formatted JSON deterministically. The builder
-sets expected results explicitly; it does not call the validator to obtain them.
+Review the case definitions in `scripts/build-vectors.ts` instead of reading
+repeated hashes. `npm run vectors:build` regenerates formatted JSON
+deterministically. The builder sets expected results explicitly; it does not call
+the validator to obtain them.
 
 The unit suite checks expectations and replays each valid-root history in reverse
 delivery order. Ordinary unit tests handle API edge cases such as malformed UTF-8
@@ -37,7 +39,11 @@ separate integration suite against a local mint.
 {
   "name": "settle-btc-to-fiat",
   "description": "...",
-  "spec": { "commit": "d9a1eb3", "pip02_version": 2, "profile": "pontmore/swap@1" },
+  "spec": {
+    "commit": "edcf1370e7e646574021709cc9b186d96377280a",
+    "pip02_version": 2,
+    "profile": "pontmore/swap@1",
+  },
   "descriptor": {/* signed kind 30361 event */},
   "root": {/* signed kind 7300 event */},
   "actions": [/* signed kind 7301 events, delivery order as given */],

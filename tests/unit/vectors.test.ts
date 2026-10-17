@@ -30,7 +30,7 @@ const Vector = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
   spec: z.object({
-    commit: z.literal('d9a1eb3'),
+    commit: z.literal('edcf1370e7e646574021709cc9b186d96377280a'),
     pip02_version: z.literal(2),
     profile: z.literal('pontmore/swap@1'),
   }),

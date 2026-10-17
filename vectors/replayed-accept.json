@@ -2,7 +2,7 @@
   "name": "replayed-accept",
   "description": "A second acceptance linked to the first is a replay, not progress.",
   "spec": {
-    "commit": "d9a1eb3",
+    "commit": "edcf1370e7e646574021709cc9b186d96377280a",
     "pip02_version": 2,
     "profile": "pontmore/swap@1"
   },

@@ -40,9 +40,14 @@ yarn-error.log
 .DS_Store
 Thumbs.db
 
-# Agent instructions and local-only docs — kept on disk, never pushed
+# Agent instructions and local-only working docs — kept on disk, never pushed
 AGENTS.md
 CLAUDE.md
 README.local.md
 escrow_execution_plan.md
-/docs
+/docs/*
+# Maintained project documentation
+/docs/architecture.md
+/docs/integrating.md
+/docs/interop-notes.md
+/docs/runbook.md

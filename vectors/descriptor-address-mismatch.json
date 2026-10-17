@@ -2,7 +2,7 @@
   "name": "descriptor-address-mismatch",
   "description": "The addressable reference points at a different d-tag than the bound descriptor.",
   "spec": {
-    "commit": "d9a1eb3",
+    "commit": "edcf1370e7e646574021709cc9b186d96377280a",
     "pip02_version": 2,
     "profile": "pontmore/swap@1"
   },

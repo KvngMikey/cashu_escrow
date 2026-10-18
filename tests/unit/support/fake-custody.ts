@@ -49,6 +49,7 @@ export class FakeCustodyMint implements CustodyMint {
     changeAmount: 10,
   };
   meltResults: MeltResult[] = [];
+  meltCompletion: SpendRecovery<MeltResult> | undefined;
   invoiceAmounts = new Map<string, number>();
   invoiceFeeReserves = new Map<string, number>();
   p2pkRecovery: SpendRecovery<TokenSpendResult> | undefined;
@@ -167,14 +168,15 @@ export class FakeCustodyMint implements CustodyMint {
   }
 
   async #completeMelt(input: PreparedMelt): Promise<SpendRecovery<MeltResult>> {
+    await this.beforeMelt?.();
+    this.meltCalls += 1;
+    if (this.meltCompletion !== undefined) return this.meltCompletion;
     const result = this.meltResults[0] ?? this.meltResult;
     if (result.paidAmount !== input.quote.amount) {
       return Promise.reject(
         new Error('Lightning invoice amount does not match the bound quote')
       );
     }
-    await this.beforeMelt?.();
-    this.meltCalls += 1;
     return {
       state: 'complete',
       result: this.meltResults.shift() ?? this.meltResult,

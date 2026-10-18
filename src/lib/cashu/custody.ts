@@ -590,7 +590,11 @@ export class CustodyEngine {
           outcome.state === 'inconsistent' ? outcome.tokens : undefined
         );
       }
-      return record;
+      throw new EscrowError(
+        'mint_unavailable',
+        'custody spend is pending at the mint',
+        { swapId: record.coordinationId }
+      );
     }
     const spend = requirePendingSpend(record);
     return spend.kind === 'settlement_bolt11_recipient'

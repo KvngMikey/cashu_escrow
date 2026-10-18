@@ -253,11 +253,12 @@ export class CashuTsMint implements CustodyMint {
       const preview = parseSwapPreview(prepared.payload);
       const sendOutputs = preview.sendOutputs ?? [];
       const keepOutputs = preview.keepOutputs ?? [];
-      const recovered = await this.#restoreOutputs([
-        ...sendOutputs,
-        ...keepOutputs,
-      ]);
+      const outputs = [...sendOutputs, ...keepOutputs];
+      let recovered = await this.#restoreOutputs(outputs);
       const state = await this.#proofState(preview.inputs);
+      if (state === 'spent' && recovered.length < outputs.length) {
+        recovered = await this.#restoreOutputs(outputs);
+      }
       if (recovered.length === sendOutputs.length + keepOutputs.length) {
         if (state === 'pending') return { state };
         const result = tokenSpendResult(

@@ -591,6 +591,40 @@ describe('CustodyEngine', () => {
     expect(mint.meltCalls).toBe(0);
   });
 
+  it('keeps a pending Lightning melt unresolved until mint recovery completes', async () => {
+    const { engine, mint, store } = setup({ feesEnabled: false });
+    mint.meltCompletion = { state: 'pending' };
+    await hold(engine, 'bolt11', 1);
+    const input = {
+      coordinationId: 'swap-1',
+      payout: { type: 'bolt11' as const, invoice: 'lnbc-recipient' },
+      amounts: {
+        grossSats: 1_000,
+        operatorFeeSats: 0,
+        networkCostSats: 1,
+        payoutSats: 999,
+      },
+      now: 2_000,
+    };
+
+    await expect(engine.settle(input)).rejects.toMatchObject({
+      category: 'mint_unavailable',
+    });
+    expect(await store.get('swap-1')).toMatchObject({ status: 'spending' });
+
+    mint.meltRecovery = {
+      state: 'complete',
+      result: {
+        paidAmount: 999,
+        feePaid: 1,
+        changeAmount: 0,
+      },
+    };
+    await expect(
+      engine.settle({ ...input, now: 2_101 })
+    ).resolves.toMatchObject({ status: 'settled' });
+  });
+
   it('recovers the operator-fee melt after a crash before append', async () => {
     const { engine, mint, store } = setup();
     const recipientResult = {

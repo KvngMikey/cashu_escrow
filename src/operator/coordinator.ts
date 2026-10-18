@@ -568,7 +568,10 @@ export class CoordinationOperator {
     }
 
     if (!state.facts.settlementAuthorized) return;
-    if (now > record.locktime - this.#policy.releaseSafetyMarginSeconds) {
+    if (
+      record.status === 'held' &&
+      now > record.locktime - this.#policy.releaseSafetyMarginSeconds
+    ) {
       await this.#custody.markSettlementUnfulfillable({ coordinationId, now });
       await this.#notifyParticipants(
         coordination,

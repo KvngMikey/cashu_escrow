@@ -194,6 +194,78 @@ describe('CoordinationOperator', () => {
     expect(lastAction(setup.pool, 'core/settle')).toBeDefined();
   });
 
+  it('does not publish settlement for a pending melt and resumes it after the cutoff', async () => {
+    const setup = await createSetup({
+      direction: 'fiat_to_btc',
+      payoutType: 'bolt11',
+      feesEnabled: false,
+    });
+    setup.mint.meltCompletion = { state: 'pending' };
+    await setup.operator.fundingInstructions(
+      setup.root.id,
+      AGENT.pubkey,
+      T0 + 29
+    );
+    await setup.operator.submitFunding({
+      coordinationId: setup.root.id,
+      caller: AGENT.pubkey,
+      token: 'cashu-locked',
+      now: T0 + 30,
+    });
+    await setup.operator.putPayout({
+      coordinationId: setup.root.id,
+      caller: CUSTOMER.pubkey,
+      payout: { type: 'bolt11', invoice: 'lnbc-999' },
+      now: T0 + 31,
+    });
+    let prev = lastAction(setup.pool, 'core/secure')!.id;
+    prev = await publishAction(setup, {
+      signer: setup.customerSigner,
+      action: ACTION_FIAT_SENT,
+      prev,
+      at: T0 + 40,
+      data: { payment_reference: 'payment-pending' },
+    });
+    prev = await publishAction(setup, {
+      signer: setup.agentSigner,
+      action: ACTION_FIAT_CONFIRMED,
+      prev,
+      at: T0 + 50,
+      data: { payment_reference: 'payment-pending' },
+    });
+    setup.pool.seed(
+      actionEvent(setup, {
+        signer: setup.agentSigner,
+        action: 'core/authorize_settlement',
+        prev,
+        at: T0 + 60,
+      })
+    );
+
+    await expect(setup.operator.tick(T0 + 60)).rejects.toMatchObject({
+      category: 'mint_unavailable',
+    });
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'spending',
+    });
+    expect(lastAction(setup.pool, 'core/settle')).toBeUndefined();
+
+    setup.mint.meltRecovery = {
+      state: 'complete',
+      result: {
+        paidAmount: 999,
+        feePaid: 1,
+        changeAmount: 0,
+      },
+    };
+    await setup.operator.tick(TIMES.locktime - 49);
+
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'settled',
+    });
+    expect(lastAction(setup.pool, 'core/settle')).toBeDefined();
+  });
+
   it('re-derives authorization before publishing when a dispute arrives during custody', async () => {
     const setup = await createSetup();
     await fund(setup);

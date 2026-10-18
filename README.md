@@ -63,6 +63,13 @@ npm run build
 `npm test` runs local unit tests with synthetic identities and an in-memory
 relay. The integration suite exercises custody against a local Nutshell mint.
 
+The configured mint must advertise NUT-07 through NUT-12. NUT-08 melt-change
+outputs and NUT-09 restoration make an interrupted spend recoverable from the
+encrypted custody journal. Funding tokens must retain a valid NUT-12 DLEQ for
+every proof so the operator can prove the mint signed the ecash before
+publishing `core/secure`; NUT-07 reports only whether each proof secret is
+currently spent.
+
 Keep `.env` and runtime custody data out of Git.
 
 ## Protocol fixtures
@@ -140,6 +147,11 @@ Cashu NUT-11 locktime expiry makes the provider's refund-key spending path
 available at the mint. It does not authorize or publish a Pontmore
 `core/refund`. A public refund requires `core/authorize_refund` or a valid
 dispute-resolution effect of `authorize_refund`.
+
+During an active dispute or fork, the operator continues to observe proof state
+and privately notifies the participants of expiry, but withholds the original
+token from both NIP-59 delivery and the refund-pickup endpoint. Recovery material
+becomes available only after the freeze clears through a valid chain path.
 
 ## References
 

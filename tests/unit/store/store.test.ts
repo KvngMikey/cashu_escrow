@@ -56,6 +56,32 @@ describe('EncryptedCustodyStore', () => {
     });
   });
 
+  it('round trips encrypted prepared spend recovery material', async () => {
+    const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-store-${crypto.randomUUID()}/store.jsonl`;
+    const store = new EncryptedCustodyStore(path, new Uint8Array(32).fill(7));
+    await store.append(base);
+    await store.append({
+      ...base,
+      revision: 2,
+      status: 'spending',
+      spend: {
+        kind: 'settlement_p2pk',
+        prepared: { payload: 'recoverable-blinded-output-data' },
+        operatorFeeSats: 10,
+        payoutSats: 989,
+      },
+      observedAt: 1_001,
+    });
+
+    await expect(store.get(base.coordinationId)).resolves.toMatchObject({
+      status: 'spending',
+      spend: { kind: 'settlement_p2pk' },
+    });
+    expect(await readFile(path, 'utf8')).not.toContain(
+      'recoverable-blinded-output-data'
+    );
+  });
+
   it('discards only an unframed torn final append', async () => {
     const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-store-${crypto.randomUUID()}/store.jsonl`;
     const key = new Uint8Array(32).fill(7);

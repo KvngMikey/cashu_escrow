@@ -203,6 +203,123 @@ describe('CustodyEngine', () => {
     expect(mint.swapCalls).toBe(1);
   });
 
+  it('persists a recoverable P2PK intent before calling the mint', async () => {
+    const { engine, mint, store } = setup();
+    await hold(engine);
+    mint.beforeSwap = async () => {
+      expect(await store.get('swap-1')).toMatchObject({
+        status: 'spending',
+        spend: { kind: 'settlement_p2pk' },
+      });
+    };
+
+    await engine.settle({
+      coordinationId: 'swap-1',
+      payout: { type: 'cashu_p2pk', recipientPubkey: CUSTOMER.pubkey },
+      amounts: settlementAmounts,
+      now: 2_000,
+    });
+  });
+
+  it('recovers P2PK outputs after a crash before the terminal append', async () => {
+    const { engine, mint, store } = setup();
+    await hold(engine);
+    const recovered = {
+      recipientToken: 'cashu-recovered-recipient',
+      recipientAmount: 989,
+      changeToken: 'cashu-recovered-operator',
+      changeAmount: 10,
+    };
+    mint.beforeSwap = () => {
+      mint.p2pkRecovery = { state: 'complete', result: recovered };
+      return Promise.reject(new Error('simulated process loss'));
+    };
+    await expect(
+      engine.settle({
+        coordinationId: 'swap-1',
+        payout: { type: 'cashu_p2pk', recipientPubkey: CUSTOMER.pubkey },
+        amounts: settlementAmounts,
+        now: 2_000,
+      })
+    ).rejects.toThrow(/process loss/);
+    expect(await store.get('swap-1')).toMatchObject({ status: 'spending' });
+
+    const restarted = new CustodyEngine({
+      mint,
+      store,
+      signer: createSigner(OPERATOR.nsec),
+      policy,
+    });
+    await restarted.reconcile(2_001);
+    expect(await store.get('swap-1')).toMatchObject({
+      status: 'settled',
+      payoutToken: recovered.recipientToken,
+      operatorToken: recovered.changeToken,
+    });
+    expect(mint.swapCalls).toBe(0);
+  });
+
+  it('recovers an authorized refund after a crash before append', async () => {
+    const { engine, mint, store } = setup();
+    await hold(engine);
+    const recovered = {
+      recipientToken: 'cashu-recovered-refund',
+      recipientAmount: 999,
+      changeAmount: 0,
+    };
+    mint.beforeSwap = () => {
+      mint.p2pkRecovery = { state: 'complete', result: recovered };
+      return Promise.reject(new Error('simulated process loss'));
+    };
+    await expect(
+      engine.refundAuthorized({
+        coordinationId: 'swap-1',
+        amounts: {
+          grossSats: 1_000,
+          operatorFeeSats: 0,
+          networkCostSats: 1,
+          payoutSats: 999,
+        },
+        now: 2_100,
+      })
+    ).rejects.toThrow(/process loss/);
+
+    const restarted = new CustodyEngine({
+      mint,
+      store,
+      signer: createSigner(OPERATOR.nsec),
+      policy,
+    });
+    await restarted.reconcile(2_101);
+    expect(await store.get('swap-1')).toMatchObject({
+      status: 'refunded',
+      payoutToken: recovered.recipientToken,
+    });
+  });
+
+  it('rolls an unexecuted prepared spend back to held on restart', async () => {
+    const { engine, mint, store } = setup();
+    await hold(engine);
+    mint.beforeSwap = () => Promise.reject(new Error('simulated process loss'));
+    await expect(
+      engine.settle({
+        coordinationId: 'swap-1',
+        payout: { type: 'cashu_p2pk', recipientPubkey: CUSTOMER.pubkey },
+        amounts: settlementAmounts,
+        now: 2_000,
+      })
+    ).rejects.toThrow(/process loss/);
+
+    const restarted = new CustodyEngine({
+      mint,
+      store,
+      signer: createSigner(OPERATOR.nsec),
+      policy,
+    });
+    await restarted.reconcile(2_001);
+    expect(await store.get('swap-1')).toMatchObject({ status: 'held' });
+  });
+
   it('settles cashu with fees disabled', async () => {
     const { engine } = setup({ feesEnabled: false });
     await hold(engine);
@@ -368,6 +485,234 @@ describe('CustodyEngine', () => {
       })
     ).rejects.toThrow(/amount/);
     expect(mint.meltCalls).toBe(0);
+  });
+
+  it('rejects an excessive recipient fee reserve before spending', async () => {
+    const { engine, mint, store } = setup({ feesEnabled: false });
+    mint.invoiceFeeReserves.set('lnbc-recipient', 2);
+    await hold(engine, 'bolt11', 1);
+    await expect(
+      engine.settle({
+        coordinationId: 'swap-1',
+        payout: { type: 'bolt11', invoice: 'lnbc-recipient' },
+        amounts: {
+          grossSats: 1_000,
+          operatorFeeSats: 0,
+          networkCostSats: 1,
+          payoutSats: 999,
+        },
+        now: 2_000,
+      })
+    ).rejects.toThrow(/reserve/);
+    expect(mint.meltCalls).toBe(0);
+    expect(await store.get('swap-1')).toMatchObject({ status: 'held' });
+  });
+
+  it('preflights both Lightning fee reserves before the recipient melt', async () => {
+    const { engine, mint, store } = setup();
+    mint.invoiceFeeReserves.set('lnbc-recipient', 1);
+    mint.invoiceFeeReserves.set('lnbc-10', 2);
+    await hold(engine, 'bolt11', 2);
+    await expect(
+      engine.settle({
+        coordinationId: 'swap-1',
+        payout: { type: 'bolt11', invoice: 'lnbc-recipient' },
+        amounts: {
+          grossSats: 1_000,
+          operatorFeeSats: 10,
+          networkCostSats: 2,
+          payoutSats: 988,
+        },
+        now: 2_000,
+      })
+    ).rejects.toThrow(/reserve/);
+    expect(mint.quoteCalls).toBe(2);
+    expect(mint.meltCalls).toBe(0);
+    expect(await store.get('swap-1')).toMatchObject({ status: 'held' });
+  });
+
+  it('reserves the worst-case input fee for the operator-fee change', async () => {
+    const { engine, mint, store } = setup();
+    mint.maxChangeInputFee = 2;
+    mint.invoiceFeeReserves.set('lnbc-10', 1);
+    await hold(engine, 'bolt11', 3);
+    await expect(
+      engine.settle({
+        coordinationId: 'swap-1',
+        payout: { type: 'bolt11', invoice: 'lnbc-recipient' },
+        amounts: {
+          grossSats: 1_000,
+          operatorFeeSats: 10,
+          networkCostSats: 3,
+          payoutSats: 987,
+        },
+        now: 2_000,
+      })
+    ).rejects.toThrow(/reserve/);
+    expect(mint.meltCalls).toBe(0);
+    expect(await store.get('swap-1')).toMatchObject({ status: 'held' });
+  });
+
+  it('recovers a paid Lightning melt after a crash before append', async () => {
+    const { engine, mint, store } = setup({ feesEnabled: false });
+    const recovered = {
+      paidAmount: 999,
+      feePaid: 1,
+      changeAmount: 0,
+    };
+    mint.meltResult = recovered;
+    mint.beforeMelt = () => {
+      mint.meltRecovery = { state: 'complete', result: recovered };
+      return Promise.reject(new Error('simulated process loss'));
+    };
+    await hold(engine, 'bolt11', 1);
+    await expect(
+      engine.settle({
+        coordinationId: 'swap-1',
+        payout: { type: 'bolt11', invoice: 'lnbc-recipient' },
+        amounts: {
+          grossSats: 1_000,
+          operatorFeeSats: 0,
+          networkCostSats: 1,
+          payoutSats: 999,
+        },
+        now: 2_000,
+      })
+    ).rejects.toThrow(/process loss/);
+
+    const restarted = new CustodyEngine({
+      mint,
+      store,
+      signer: createSigner(OPERATOR.nsec),
+      policy: { ...policy, feesEnabled: false },
+    });
+    await restarted.reconcile(2_001);
+    expect(await store.get('swap-1')).toMatchObject({ status: 'settled' });
+    expect(mint.meltCalls).toBe(0);
+  });
+
+  it('keeps a pending Lightning melt unresolved until mint recovery completes', async () => {
+    const { engine, mint, store } = setup({ feesEnabled: false });
+    mint.meltCompletion = { state: 'pending' };
+    await hold(engine, 'bolt11', 1);
+    const input = {
+      coordinationId: 'swap-1',
+      payout: { type: 'bolt11' as const, invoice: 'lnbc-recipient' },
+      amounts: {
+        grossSats: 1_000,
+        operatorFeeSats: 0,
+        networkCostSats: 1,
+        payoutSats: 999,
+      },
+      now: 2_000,
+    };
+
+    await expect(engine.settle(input)).rejects.toMatchObject({
+      category: 'mint_unavailable',
+    });
+    expect(await store.get('swap-1')).toMatchObject({ status: 'spending' });
+
+    mint.meltRecovery = {
+      state: 'complete',
+      result: {
+        paidAmount: 999,
+        feePaid: 1,
+        changeAmount: 0,
+      },
+    };
+    await expect(
+      engine.settle({ ...input, now: 2_101 })
+    ).resolves.toMatchObject({ status: 'settled' });
+  });
+
+  it('recovers the operator-fee melt after a crash before append', async () => {
+    const { engine, mint, store } = setup();
+    const recipientResult = {
+      paidAmount: 987,
+      feePaid: 1,
+      changeToken: 'cashu-change',
+      changeAmount: 12,
+    };
+    const operatorResult = {
+      paidAmount: 10,
+      feePaid: 1,
+      changeToken: 'cashu-overage-change',
+      changeAmount: 1,
+    };
+    mint.meltResults = [recipientResult, operatorResult];
+    let attempts = 0;
+    mint.beforeMelt = () => {
+      attempts += 1;
+      if (attempts === 2) {
+        mint.meltRecovery = { state: 'complete', result: operatorResult };
+        return Promise.reject(new Error('simulated process loss'));
+      }
+      return Promise.resolve();
+    };
+    await hold(engine, 'bolt11', 3);
+    await expect(
+      engine.settle({
+        coordinationId: 'swap-1',
+        payout: { type: 'bolt11', invoice: 'lnbc-recipient' },
+        amounts: {
+          grossSats: 1_000,
+          operatorFeeSats: 10,
+          networkCostSats: 3,
+          payoutSats: 987,
+        },
+        now: 2_000,
+      })
+    ).rejects.toThrow(/process loss/);
+    expect(await store.get('swap-1')).toMatchObject({
+      status: 'spending',
+      spend: { kind: 'settlement_bolt11_operator' },
+    });
+
+    const restarted = new CustodyEngine({
+      mint,
+      store,
+      signer: createSigner(OPERATOR.nsec),
+      policy,
+    });
+    await restarted.reconcile(2_001);
+    expect(await store.get('swap-1')).toMatchObject({
+      status: 'settled',
+      overageToken: operatorResult.changeToken,
+    });
+    expect(mint.meltCalls).toBe(1);
+  });
+
+  it('freezes an impossible post-melt result instead of retrying it', async () => {
+    const { engine, mint, store } = setup({ feesEnabled: false });
+    mint.meltResult = {
+      paidAmount: 997,
+      feePaid: 2,
+      changeToken: 'cashu-reconciliation-change',
+      changeAmount: 1,
+    };
+    await hold(engine, 'bolt11', 3);
+    const input = {
+      coordinationId: 'swap-1',
+      payout: { type: 'bolt11' as const, invoice: 'lnbc-recipient' },
+      amounts: {
+        grossSats: 1_000,
+        operatorFeeSats: 0,
+        networkCostSats: 3,
+        payoutSats: 997,
+      },
+      now: 2_000,
+    };
+    await expect(engine.settle(input)).rejects.toMatchObject({
+      category: 'mint_misbehavior',
+    });
+    expect(await store.get('swap-1')).toMatchObject({
+      status: 'reconciliation_required',
+      reconciliationTokens: ['cashu-reconciliation-change'],
+    });
+    await expect(engine.settle(input)).rejects.toMatchObject({
+      category: 'mint_misbehavior',
+    });
+    expect(mint.meltCalls).toBe(1);
   });
 
   it.each([

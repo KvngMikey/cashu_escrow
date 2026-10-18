@@ -31,6 +31,8 @@ export const ERROR_CATEGORIES = [
   'relay_unavailable',
   /** The configured mint is unavailable or lacks a required capability. */
   'mint_unavailable',
+  /** The mint returned an impossible post-spend result; custody is frozen. */
+  'mint_misbehavior',
   /** A Lightning Address or invoice endpoint could not complete its request. */
   'lightning_unavailable',
   /** Custody material or a requested custody transition is invalid. */

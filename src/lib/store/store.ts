@@ -14,11 +14,76 @@ export const CUSTODY_OVERLAYS = [
 ] as const;
 export type CustodyOverlay = (typeof CUSTODY_OVERLAYS)[number];
 
+const PreparedP2pkSpend = z.object({ payload: z.string().min(1) }).strict();
+const Bolt11MeltQuote = z
+  .object({
+    id: z.string().min(1),
+    amount: z.number().int().positive(),
+    feeReserve: z.number().int().nonnegative(),
+    expiry: z.number().int().nonnegative(),
+  })
+  .strict();
+const PreparedMelt = z
+  .object({
+    payload: z.string().min(1),
+    quote: Bolt11MeltQuote,
+    inputFee: z.number().int().nonnegative(),
+    maxChangeInputFee: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const PendingSpend = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.enum(['settlement_p2pk', 'refund_p2pk']),
+      prepared: PreparedP2pkSpend,
+      operatorFeeSats: z.number().int().nonnegative(),
+      payoutSats: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('settlement_bolt11_recipient'),
+      prepared: PreparedMelt,
+      operatorFeeQuote: Bolt11MeltQuote.optional(),
+      operatorFeeInvoice: z.string().min(1).optional(),
+      operatorFeeSats: z.number().int().nonnegative(),
+      payoutSats: z.number().int().positive(),
+      networkBudgetSats: z.number().int().nonnegative(),
+      returnOverage: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('settlement_bolt11_operator'),
+      prepared: PreparedMelt,
+      sourceToken: z.string().min(1),
+      operatorFeeInvoice: z.string().min(1),
+      operatorFeeSats: z.number().int().positive(),
+      payoutSats: z.number().int().positive(),
+      networkBudgetSats: z.number().int().nonnegative(),
+      networkSpentSats: z.number().int().nonnegative(),
+      returnOverage: z.boolean(),
+    })
+    .strict(),
+]);
+
+export type PendingCustodySpend = z.infer<typeof PendingSpend>;
+
 const StoredRecord = z
   .object({
     coordinationId: z.string().min(1),
     revision: z.number().int().positive(),
-    status: z.enum(['held', 'settled', 'refunded']),
+    status: z.enum([
+      'held',
+      'spending',
+      'settled',
+      'refunded',
+      'reconciliation_required',
+    ]),
+    spend: PendingSpend.optional(),
+    reconciliationReason: z.string().min(1).optional(),
+    reconciliationTokens: z.array(z.string().min(1)).min(1).optional(),
     overlay: z.enum(CUSTODY_OVERLAYS).optional(),
     token: z.string().min(1),
     mintUrl: z.string().url(),

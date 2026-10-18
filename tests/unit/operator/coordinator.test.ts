@@ -194,6 +194,78 @@ describe('CoordinationOperator', () => {
     expect(lastAction(setup.pool, 'core/settle')).toBeDefined();
   });
 
+  it('does not publish settlement for a pending melt and resumes it after the cutoff', async () => {
+    const setup = await createSetup({
+      direction: 'fiat_to_btc',
+      payoutType: 'bolt11',
+      feesEnabled: false,
+    });
+    setup.mint.meltCompletion = { state: 'pending' };
+    await setup.operator.fundingInstructions(
+      setup.root.id,
+      AGENT.pubkey,
+      T0 + 29
+    );
+    await setup.operator.submitFunding({
+      coordinationId: setup.root.id,
+      caller: AGENT.pubkey,
+      token: 'cashu-locked',
+      now: T0 + 30,
+    });
+    await setup.operator.putPayout({
+      coordinationId: setup.root.id,
+      caller: CUSTOMER.pubkey,
+      payout: { type: 'bolt11', invoice: 'lnbc-999' },
+      now: T0 + 31,
+    });
+    let prev = lastAction(setup.pool, 'core/secure')!.id;
+    prev = await publishAction(setup, {
+      signer: setup.customerSigner,
+      action: ACTION_FIAT_SENT,
+      prev,
+      at: T0 + 40,
+      data: { payment_reference: 'payment-pending' },
+    });
+    prev = await publishAction(setup, {
+      signer: setup.agentSigner,
+      action: ACTION_FIAT_CONFIRMED,
+      prev,
+      at: T0 + 50,
+      data: { payment_reference: 'payment-pending' },
+    });
+    setup.pool.seed(
+      actionEvent(setup, {
+        signer: setup.agentSigner,
+        action: 'core/authorize_settlement',
+        prev,
+        at: T0 + 60,
+      })
+    );
+
+    await expect(setup.operator.tick(T0 + 60)).rejects.toMatchObject({
+      category: 'mint_unavailable',
+    });
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'spending',
+    });
+    expect(lastAction(setup.pool, 'core/settle')).toBeUndefined();
+
+    setup.mint.meltRecovery = {
+      state: 'complete',
+      result: {
+        paidAmount: 999,
+        feePaid: 1,
+        changeAmount: 0,
+      },
+    };
+    await setup.operator.tick(TIMES.locktime - 49);
+
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'settled',
+    });
+    expect(lastAction(setup.pool, 'core/settle')).toBeDefined();
+  });
+
   it('re-derives authorization before publishing when a dispute arrives during custody', async () => {
     const setup = await createSetup();
     await fund(setup);
@@ -378,6 +450,21 @@ describe('CoordinationOperator', () => {
     });
     expect(lastAction(setup.pool, 'core/settle')).toBeUndefined();
     expect(lastAction(setup.pool, 'core/refund')).toBeUndefined();
+    expect(
+      setup.operatorStore.outbox.get(`expiry:${setup.root.id}`)?.published
+    ).not.toBe(true);
+    expect(
+      setup.operatorStore.outbox.get(
+        `custody_expired:${setup.root.id}:${CUSTOMER.pubkey}`
+      )?.published
+    ).toBe(true);
+    await expect(
+      setup.operator.refund({
+        coordinationId: setup.root.id,
+        caller: CUSTOMER.pubkey,
+        now: TIMES.locktime,
+      })
+    ).rejects.toMatchObject({ category: 'custody_conflict' });
   });
 
   it('applies resolver settlement and refund effects through custody gates', async () => {
@@ -553,6 +640,16 @@ describe('CoordinationOperator', () => {
       },
     });
     expect(lastAction(setup.pool, 'core/refund')).toBeDefined();
+    expect(
+      setup.operatorStore.outbox.get(`expiry:${setup.root.id}`)?.published
+    ).toBe(true);
+    await expect(
+      setup.operator.refund({
+        coordinationId: setup.root.id,
+        caller: CUSTOMER.pubkey,
+        now: TIMES.locktime + 1,
+      })
+    ).resolves.toMatchObject({ kind: 'expired_recovery_material' });
   });
 
   it('executes an authorized pre-expiry refund and publishes only after delivery', async () => {
@@ -650,7 +747,7 @@ describe('CoordinationOperator', () => {
     ).resolves.toMatchObject({ kind: 'expired_recovery_material' });
   });
 
-  it('exposes private expiry recovery while a dispute freezes the public chain', async () => {
+  it('withholds expiry recovery material while a dispute is active', async () => {
     const setup = await createSetup();
     await fund(setup);
     await publishAction(setup, {
@@ -668,13 +765,53 @@ describe('CoordinationOperator', () => {
       overlay: 'expired_recovery_available',
     });
     expect(lastAction(setup.pool, 'core/refund')).toBeUndefined();
+    expect(
+      setup.operatorStore.outbox.get(`expiry:${setup.root.id}`)?.published
+    ).not.toBe(true);
+    expect(
+      setup.operatorStore.outbox.get(
+        `custody_expired:${setup.root.id}:${CUSTOMER.pubkey}`
+      )?.published
+    ).toBe(true);
     await expect(
       setup.operator.refund({
         coordinationId: setup.root.id,
         caller: CUSTOMER.pubkey,
         now: TIMES.locktime,
       })
-    ).resolves.toMatchObject({ kind: 'expired_recovery_material' });
+    ).rejects.toMatchObject({ category: 'custody_conflict' });
+  });
+
+  it('rechecks the freeze after staging expiry recovery delivery', async () => {
+    const setup = await createSetup();
+    await fund(setup);
+    const dispute = actionEvent(setup, {
+      signer: setup.agentSigner,
+      action: 'core/open_dispute',
+      prev: lastAction(setup.pool, 'core/secure')!.id,
+      at: T0 + 100,
+      data: { class: 'timeout' },
+    });
+    setup.operatorStore.beforeStageOutbox = (key) => {
+      if (key === `expiry:${setup.root.id}`) setup.pool.seed(dispute);
+    };
+
+    setup.clock.now = TIMES.locktime;
+    await setup.operator.tick(TIMES.locktime);
+
+    expect(
+      await setup.operator.status(setup.root.id, CUSTOMER.pubkey)
+    ).toMatchObject({ public_state: 'disputed' });
+    expect(
+      setup.operatorStore.outbox.get(`expiry:${setup.root.id}`)?.published
+    ).toBe(false);
+    await expect(
+      setup.operator.refund({
+        coordinationId: setup.root.id,
+        caller: CUSTOMER.pubkey,
+        now: TIMES.locktime,
+      })
+    ).rejects.toMatchObject({ category: 'custody_conflict' });
   });
 
   it('publishes a late authorized refund only while the original proofs remain unspent', async () => {

@@ -1,3 +1,4 @@
+import { Amount, hasValidDleq, type Proof } from '@cashu/cashu-ts';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -46,6 +47,26 @@ function inspected(
 }
 
 describe('verifyLockedToken', () => {
+  it('uses strict DLEQ semantics for funding proofs', () => {
+    const keysetId = `00${'11'.repeat(32)}`;
+    const proof: Proof = {
+      id: keysetId,
+      amount: Amount.from(1_000),
+      secret: 'attacker-controlled secret',
+      C: `02${'22'.repeat(32)}`,
+    };
+    const keyset = {
+      id: keysetId,
+      keys: {
+        '1000':
+          '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798',
+      },
+    } as Parameters<typeof hasValidDleq>[1];
+
+    expect(hasValidDleq(proof, keyset, { require: false })).toBe(true);
+    expect(hasValidDleq(proof, keyset, { require: true })).toBe(false);
+  });
+
   it('accepts an exact operator lock with the provider refund path', async () => {
     const mint = new FakeCustodyMint(inspected());
     await expect(

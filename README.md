@@ -27,9 +27,11 @@ npm ci
 cp .env.example .env
 ```
 
-Set distinct valid `OPERATOR_NSEC` and `RESOLVER_NSEC` values in `.env`, then
-start the local services shown below. Verify the implementation and run the
-operator:
+Set distinct valid `OPERATOR_NSEC` and `RESOLVER_NSEC` values in `.env`. For
+local operation, also set `NOSTR_RELAYS=ws://127.0.0.1:17000` and
+`SERVICE_BASE_URL=http://127.0.0.1:3000` so the operator uses the local relay
+and verifies NIP-98 requests against the local HTTP origin. Start the local
+services shown below, then verify the implementation and run the operator:
 
 ```bash
 npm run typecheck

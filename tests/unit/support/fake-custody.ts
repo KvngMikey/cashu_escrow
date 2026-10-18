@@ -2,9 +2,13 @@ import type { EventSigner } from '../../../src/lib/pontmore/signer.ts';
 import type { LightningInvoiceSource } from '../../../src/lib/lightning/invoice.ts';
 import type {
   CustodyMint,
+  Bolt11MeltQuote,
   InspectedToken,
   MeltResult,
   MintProofState,
+  PreparedMelt,
+  PreparedP2pkSpend,
+  SpendRecovery,
   TokenSpendResult,
 } from '../../../src/lib/cashu/mint.ts';
 import type {
@@ -37,6 +41,7 @@ export class FakeCustodyMint implements CustodyMint {
   proofStates: MintProofState[] = ['unspent'];
   swapCalls = 0;
   meltCalls = 0;
+  quoteCalls = 0;
   meltResult: MeltResult = {
     paidAmount: 989,
     feePaid: 1,
@@ -45,7 +50,13 @@ export class FakeCustodyMint implements CustodyMint {
   };
   meltResults: MeltResult[] = [];
   invoiceAmounts = new Map<string, number>();
+  invoiceFeeReserves = new Map<string, number>();
+  p2pkRecovery: SpendRecovery<TokenSpendResult> | undefined;
+  meltRecovery: SpendRecovery<MeltResult> | undefined;
+  changeInputFee = 0;
+  maxChangeInputFee = 0;
   beforeSwap: (() => Promise<void>) | undefined;
+  beforeMelt: (() => Promise<void>) | undefined;
 
   constructor(inspected: InspectedToken) {
     this.inspected = inspected;
@@ -61,21 +72,55 @@ export class FakeCustodyMint implements CustodyMint {
     return Promise.resolve(this.proofStates);
   }
 
-  validateBolt11Amount(invoice: string, expectedAmount: number): Promise<void> {
-    const actual = this.invoiceAmounts.get(invoice);
-    return actual === undefined || actual === expectedAmount
-      ? Promise.resolve()
-      : Promise.reject(
-          new Error('Lightning invoice amount does not match the bound quote')
-        );
+  createBolt11MeltQuote(input: {
+    invoice: string;
+    expectedAmount: number;
+    maxFee: number;
+  }): Promise<Bolt11MeltQuote> {
+    this.quoteCalls += 1;
+    const actual = this.invoiceAmounts.get(input.invoice);
+    if (actual !== undefined && actual !== input.expectedAmount) {
+      return Promise.reject(
+        new Error('Lightning invoice amount does not match the bound quote')
+      );
+    }
+    const feeReserve =
+      this.invoiceFeeReserves.get(input.invoice) ??
+      (input.invoice === 'lnbc-10' ? 1 : 0);
+    if (feeReserve > input.maxFee) {
+      return Promise.reject(new Error('Lightning fee reserve exceeds budget'));
+    }
+    return Promise.resolve({
+      id: `quote-${input.invoice}`,
+      amount: input.expectedAmount,
+      feeReserve,
+      expiry: 9_999_999_999,
+    });
   }
 
-  async swapToP2pk(input: {
+  prepareP2pkSpend(input: {
     token: string;
     amount: number;
     recipientPubkey: string;
     signer: EventSigner;
-  }): Promise<TokenSpendResult> {
+  }): Promise<PreparedP2pkSpend> {
+    return Promise.resolve({
+      payload: JSON.stringify({
+        token: input.token,
+        amount: input.amount,
+        recipientPubkey: input.recipientPubkey,
+      }),
+    });
+  }
+
+  async completeP2pkSpend(
+    prepared: PreparedP2pkSpend
+  ): Promise<TokenSpendResult> {
+    const input = JSON.parse(prepared.payload) as {
+      token: string;
+      amount: number;
+      recipientPubkey: string;
+    };
     await this.beforeSwap?.();
     this.swapCalls += 1;
     const sourceAmount =
@@ -93,20 +138,53 @@ export class FakeCustodyMint implements CustodyMint {
     };
   }
 
-  meltBolt11(input: {
+  recoverP2pkSpend(
+    _prepared: PreparedP2pkSpend
+  ): Promise<SpendRecovery<TokenSpendResult>> {
+    return Promise.resolve(
+      this.p2pkRecovery ?? { state: this.proofStates[0] ?? 'inconsistent' }
+    );
+  }
+
+  prepareMelt(input: {
     token: string;
-    invoice: string;
-    expectedAmount: number;
+    quote: Bolt11MeltQuote;
     signer: EventSigner;
-  }): Promise<MeltResult> {
+  }): Promise<PreparedMelt> {
+    return Promise.resolve({
+      payload: JSON.stringify({ token: input.token }),
+      quote: input.quote,
+      inputFee:
+        input.token === 'cashu-change'
+          ? this.changeInputFee
+          : this.inspected.inputFee,
+      maxChangeInputFee: this.maxChangeInputFee,
+    });
+  }
+
+  completeMelt(input: PreparedMelt): Promise<SpendRecovery<MeltResult>> {
+    return this.#completeMelt(input);
+  }
+
+  async #completeMelt(input: PreparedMelt): Promise<SpendRecovery<MeltResult>> {
     const result = this.meltResults[0] ?? this.meltResult;
-    if (result.paidAmount !== input.expectedAmount) {
+    if (result.paidAmount !== input.quote.amount) {
       return Promise.reject(
         new Error('Lightning invoice amount does not match the bound quote')
       );
     }
+    await this.beforeMelt?.();
     this.meltCalls += 1;
-    return Promise.resolve(this.meltResults.shift() ?? this.meltResult);
+    return {
+      state: 'complete',
+      result: this.meltResults.shift() ?? this.meltResult,
+    };
+  }
+
+  recoverMelt(_prepared: PreparedMelt): Promise<SpendRecovery<MeltResult>> {
+    return Promise.resolve(
+      this.meltRecovery ?? { state: this.proofStates[0] ?? 'inconsistent' }
+    );
   }
 }
 

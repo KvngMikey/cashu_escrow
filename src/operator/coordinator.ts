@@ -52,6 +52,7 @@ import type { QuoteRequestBody } from '../service/schemas.ts';
 type Custody = Pick<
   CustodyEngine,
   | 'hold'
+  | 'reconcile'
   | 'settle'
   | 'refundAuthorized'
   | 'observeExpiry'
@@ -128,6 +129,7 @@ export class CoordinationOperator {
 
   async start(now: number): Promise<void> {
     await Promise.all([this.#store.initialize(), this.#custodyStore.all()]);
+    await this.#custody.reconcile(now);
     const rootFilter = {
       kinds: [KIND_COORDINATION_ROOT],
       '#p': [this.#signer.pubkey],
@@ -336,7 +338,11 @@ export class CoordinationOperator {
           coordinationId: input.coordinationId,
           now: input.now,
         });
-        if (record.overlay === 'expired_recovery_available') {
+        const state = this.#derive(coordination, input.now);
+        if (
+          record.overlay === 'expired_recovery_available' &&
+          expiryRecoveryDeliveryAllowed(state)
+        ) {
           return {
             coordination_id: input.coordinationId,
             kind: 'expired_recovery_material',
@@ -465,18 +471,17 @@ export class CoordinationOperator {
     if (record?.status === 'held' && now >= record.locktime) {
       record = await this.#custody.observeExpiry({ coordinationId, now });
       if (record.overlay === 'expired_recovery_available') {
-        await this.#deliver(
-          `expiry:${coordinationId}`,
-          this.#roles(coordination).bitcoinProvider,
-          {
-            version: 1,
-            type: 'expired_recovery_material',
-            coordination_id: coordinationId,
-            token: record.token,
-          }
-        );
         await this.#notifyParticipants(coordination, 'custody_expired', now);
-        if (!publicChainFrozen && state.facts.refundAuthorized) {
+        if (expiryRecoveryDeliveryAllowed(state)) {
+          await this.#deliverExpiryRecovery(coordination, record.token, now);
+        }
+        state = this.#derive(coordination, now);
+        if (
+          !state.terminal &&
+          !state.disputed &&
+          state.forked === null &&
+          state.facts.refundAuthorized
+        ) {
           await this.#publishAction(coordination, 'core/refund', now);
         }
       }
@@ -657,6 +662,31 @@ export class CoordinationOperator {
     await this.#store.markOutboxPublished(key);
   }
 
+  async #deliverExpiryRecovery(
+    coordination: Coordination,
+    token: string,
+    at: number
+  ): Promise<void> {
+    const key = `expiry:${coordination.root.id}`;
+    const staged = await this.#store.stageOutbox(
+      key,
+      wrapPrivateMessage(
+        this.#signer,
+        this.#roles(coordination).bitcoinProvider,
+        {
+          version: 1,
+          type: 'expired_recovery_material',
+          coordination_id: coordination.root.id,
+          token,
+        }
+      )
+    );
+    if (staged.published) return;
+    if (!expiryRecoveryDeliveryAllowed(this.#derive(coordination, at))) return;
+    await this.#relay.publish(staged.event);
+    await this.#store.markOutboxPublished(key);
+  }
+
   async #notifyParticipants(
     coordination: Coordination,
     type: string,
@@ -818,6 +848,14 @@ function quoteMatchesRoot(
     quote.gross_sats === Number(root.terms.bitcoin.amount) &&
     quote.terms_digest === committedTerms
   );
+}
+
+function expiryRecoveryDeliveryAllowed(
+  state: DerivedState<SwapFacts>
+): boolean {
+  if (state.disputed || state.forked !== null) return false;
+  if (!state.terminal) return true;
+  return state.facts.refunded && state.facts.refundAuthorized;
 }
 
 function boundAmounts(signed: SignedQuote): BoundAmounts {

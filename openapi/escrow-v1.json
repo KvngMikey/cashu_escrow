@@ -11,7 +11,7 @@
   "x-pontmore-profiles": ["pontmore/swap@1"],
   "x-pontmore-lock-mechanism": {
     "type": "p2pk_timelock",
-    "required_nuts": [7, 10, 11]
+    "required_nuts": [7, 10, 11, 12]
   },
   "x-pontmore-timing": {
     "min_locktime_seconds": 1800,
@@ -63,7 +63,8 @@
   },
   "x-pontmore-expiry-recovery": {
     "public_refund_requires": "core/authorize_refund or a valid authorize_refund resolution effect",
-    "bare_expiry": "The verified Bitcoin provider may retrieve the original token as private recovery material, but the service publishes no core/refund.",
+    "bare_expiry": "On an undisputed, unforked coordination, the verified Bitcoin provider may retrieve the original token as private recovery material, but the service publishes no core/refund.",
+    "freeze_behavior": "During an active dispute or fork, the service observes expiry and privately notifies participants without delivering the original token.",
     "completion_before_core_refund": [
       "immediate NUT-07 UNSPENT result",
       "authenticated delivery of the original token to the root-derived Bitcoin provider"
@@ -214,7 +215,7 @@
         "parameters": [{ "$ref": "#/components/parameters/CoordinationId" }],
         "responses": {
           "200": {
-            "description": "Authorized refund token or private expiry-recovery material",
+            "description": "Authorized refund token or private expiry-recovery material when no dispute or fork freezes delivery",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/RefundToken" }
@@ -584,7 +585,7 @@
           "kind": {
             "type": "string",
             "enum": ["authorized_refund", "expired_recovery_material"],
-            "description": "expired_recovery_material is private custody recovery and does not assert or authorize core/refund."
+            "description": "expired_recovery_material is private custody recovery, is withheld during an active dispute or fork, and does not assert or authorize core/refund."
           },
           "token": { "type": "string", "minLength": 1 }
         }

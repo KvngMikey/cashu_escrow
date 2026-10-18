@@ -36,6 +36,34 @@ beforeAll(async () => {
 });
 
 describe('custody against Nutshell FakeWallet', () => {
+  it('rejects otherwise-unspent funding when its DLEQ data is stripped', async () => {
+    const now = unixNow();
+    const funding = await mintLocked(100, now + 120);
+    const wallet = new Wallet(MINT_URL, { unit: 'sat' });
+    await wallet.loadMint();
+    const decoded = wallet.decodeToken(funding.token);
+    const strippedToken = getEncodedToken({
+      ...decoded,
+      proofs: decoded.proofs.map(({ dleq: _dleq, ...proof }) => proof),
+    });
+
+    expect(await mint.states(strippedToken)).toEqual(
+      funding.states.map(() => 'unspent')
+    );
+    await expect(
+      heldEngine(
+        'missing-dleq',
+        { ...funding, token: strippedToken },
+        basePolicy,
+        now,
+        'cashu_p2pk'
+      )
+    ).rejects.toMatchObject({
+      category: 'custody_invalid',
+      swapId: 'missing-dleq',
+    });
+  });
+
   it.each([true, false])(
     'holds and settles a cashu P2PK payout with fees enabled=%s',
     async (feesEnabled) => {
@@ -224,12 +252,13 @@ describe('custody against Nutshell FakeWallet', () => {
       })
     ).rejects.toThrow(/window/);
 
-    const mintAccepted = await mint.swapToP2pk({
+    const prepared = await mint.prepareP2pkSpend({
       token: funding.token,
       amount: amounts.payoutSats,
       recipientPubkey: CUSTOMER.pubkey,
       signer: operatorSigner,
     });
+    const mintAccepted = await mint.completeP2pkSpend(prepared);
     expect(mintAccepted.recipientAmount).toBe(amounts.payoutSats);
   });
 });

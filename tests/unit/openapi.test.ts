@@ -42,7 +42,7 @@ describe('OpenAPI service contract', () => {
     ]);
     expect(document['x-pontmore-lock-mechanism']).toEqual({
       type: 'p2pk_timelock',
-      required_nuts: [7, 10, 11],
+      required_nuts: [7, 10, 11, 12],
     });
     expect(document['x-pontmore-timing']).toEqual({
       min_locktime_seconds: 1800,
@@ -66,6 +66,8 @@ describe('OpenAPI service contract', () => {
     expect(document['x-pontmore-expiry-recovery']).toMatchObject({
       public_refund_requires:
         'core/authorize_refund or a valid authorize_refund resolution effect',
+      freeze_behavior:
+        'During an active dispute or fork, the service observes expiry and privately notifies participants without delivering the original token.',
     });
     expect(
       (

@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { validate } from '@scalar/openapi-parser';
 import { describe, expect, it } from 'vitest';
 
+import { PUBLIC_ERROR_CATEGORIES } from '../../src/service/schemas.ts';
+
 const schemaPath = new URL('../../openapi/escrow-v1.json', import.meta.url);
 
 describe('OpenAPI service contract', () => {
@@ -86,5 +88,17 @@ describe('OpenAPI service contract', () => {
       >
     ).QuoteRequest;
     expect(quoteRequest?.properties).not.toHaveProperty('network_cost_sats');
+
+    const error = (
+      (document.components as Record<string, unknown>).schemas as Record<
+        string,
+        Record<string, unknown>
+      >
+    ).Error;
+    const errorProperties = error?.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(errorProperties.category?.enum).toEqual(PUBLIC_ERROR_CATEGORIES);
   });
 });

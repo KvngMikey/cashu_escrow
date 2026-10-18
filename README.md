@@ -9,8 +9,42 @@ service, signed exact quotes, an encrypted private-state store, the custody
 engine, and a coordination watcher. The watcher replays kind 7300/7301 chains,
 checks the bound quote, drives custody only from derived authorization, and
 publishes `core/secure`, `core/settle`, or `core/refund` after the corresponding
-custody and private-delivery work succeeds. Kinds 30360 and 30361 provide agent
-and escrow discovery.
+custody and private-delivery work succeeds. Disputes and forks freeze economic
+actions; a separate root-bound resolver can publish supported recovery effects.
+Kinds 30360 and 30361 provide agent and escrow discovery.
+
+Version 0.1.0 is experimental. It is suitable for local integration and
+protocol interoperability work. Production-mint operation, alerting and
+independent cross-implementation validation remain later milestones.
+
+## Quickstart
+
+Requires Node 22, Docker, a local Nostr relay and a local Nutshell mint.
+
+```bash
+nvm use
+npm ci
+cp .env.example .env
+```
+
+Set distinct valid `OPERATOR_NSEC` and `RESOLVER_NSEC` values in `.env`. For
+local operation, also set `NOSTR_RELAYS=ws://127.0.0.1:17000` and
+`SERVICE_BASE_URL=http://127.0.0.1:3000` so the operator uses the local relay
+and verifies NIP-98 requests against the local HTTP origin. Start the local
+services shown below, then verify the implementation and run the operator:
+
+```bash
+npm run typecheck
+npm test
+npm run test:integration
+npm run smoke
+npm run operator
+```
+
+The operator publishes and reads back its discovery events, replays known
+coordinations, resumes its encrypted outbox, and then listens on
+`SERVICE_LISTEN_HOST:SERVICE_LISTEN_PORT`. Production deployments require an
+HTTPS reverse proxy whose public origin exactly matches `SERVICE_BASE_URL`.
 
 ## Development
 

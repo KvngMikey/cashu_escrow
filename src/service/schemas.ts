@@ -30,6 +30,23 @@ export const PayoutTargetBody = PayoutTarget;
 
 export const CoordinationId = z.string().regex(/^[0-9a-f]{64}$/);
 
+export const PUBLIC_ERROR_CATEGORIES = [
+  'request_unauthorized',
+  'request_forbidden',
+  'rate_limited',
+  'coordination_not_found',
+  'content_invalid',
+  'custody_conflict',
+  'service_unavailable',
+] as const;
+
+export const ServiceError = z
+  .object({
+    category: z.enum(PUBLIC_ERROR_CATEGORIES),
+    coordination_id: CoordinationId.nullable(),
+  })
+  .strict();
+
 export const FundingInstructions = z
   .object({
     coordination_id: CoordinationId,

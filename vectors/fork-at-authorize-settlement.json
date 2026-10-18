@@ -2,7 +2,7 @@
   "name": "fork-at-authorize-settlement",
   "description": "Sibling core/authorize_settlement actions freeze the economic gate.",
   "spec": {
-    "commit": "d9a1eb3",
+    "commit": "edcf1370e7e646574021709cc9b186d96377280a",
     "pip02_version": 2,
     "profile": "pontmore/swap@1"
   },

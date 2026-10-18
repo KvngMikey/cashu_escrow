@@ -40,7 +40,7 @@ import {
   type Direction,
 } from '../src/lib/profiles/swap-v1.ts';
 
-const SPEC_COMMIT = 'd9a1eb3';
+const SPEC_COMMIT = 'edcf1370e7e646574021709cc9b186d96377280a';
 
 /**
  * BIP-340 auxiliary randomness, fixed to zero. Signatures verify the same

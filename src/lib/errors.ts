@@ -17,8 +17,10 @@ export const ERROR_CATEGORIES = [
   'content_invalid',
   /** An event failed id/signature verification. */
   'event_invalid',
-  /** HTTP authentication or participant authorization failed. */
+  /** HTTP authentication failed or a non-HTTP signer lacks authority. */
   'request_unauthorized',
+  /** An authenticated HTTP caller is not permitted to perform the operation. */
+  'request_forbidden',
   /** An authenticated caller or the service exceeded a request quota. */
   'rate_limited',
   /** The requested coordination is not one this operator accepted. */

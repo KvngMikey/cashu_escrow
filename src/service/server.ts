@@ -239,6 +239,9 @@ function mapError(error: unknown): ServiceResponse {
   if (error.category === 'request_unauthorized') {
     return errorResponse(401, coordinationId);
   }
+  if (error.category === 'request_forbidden') {
+    return errorResponse(403, coordinationId);
+  }
   if (error.category === 'rate_limited') {
     return errorResponse(429, coordinationId);
   }
@@ -268,15 +271,17 @@ function errorResponse(
     category:
       status === 401
         ? 'request_unauthorized'
-        : status === 429
-          ? 'rate_limited'
-          : status === 404
-            ? 'coordination_not_found'
-            : status === 422
-              ? 'content_invalid'
-              : status === 409
-                ? 'custody_conflict'
-                : 'service_unavailable',
+        : status === 403
+          ? 'request_forbidden'
+          : status === 429
+            ? 'rate_limited'
+            : status === 404
+              ? 'coordination_not_found'
+              : status === 422
+                ? 'content_invalid'
+                : status === 409
+                  ? 'custody_conflict'
+                  : 'service_unavailable',
     coordination_id: coordinationId ?? null,
   });
 }

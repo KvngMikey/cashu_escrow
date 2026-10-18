@@ -129,6 +129,75 @@ describe('EscrowHttpService', () => {
     });
   });
 
+  it('distinguishes forbidden callers from failed authentication', async () => {
+    const { service, operator } = setup();
+    const id = 'bb'.repeat(32);
+    operator.status.mockRejectedValueOnce(
+      new EscrowError('request_forbidden', 'caller has the wrong role', {
+        swapId: id,
+      })
+    );
+    const path = `/v1/coordinations/${id}`;
+
+    await expect(
+      service.handle({
+        method: 'GET',
+        path,
+        authorization: authorization('GET', path),
+      })
+    ).resolves.toMatchObject({
+      status: 403,
+      body: JSON.stringify({
+        category: 'request_forbidden',
+        coordination_id: id,
+      }),
+    });
+  });
+
+  it('redacts internal availability failures and unexpected errors', async () => {
+    const { service, operator } = setup();
+    const payload = {
+      profile: 'pontmore/swap@1',
+      terms_digest: `sha256:${'aa'.repeat(32)}`,
+      direction: 'btc_to_fiat',
+      gross_sats: 1_000,
+      payout_type: 'cashu_p2pk',
+    };
+    const body = Buffer.from(JSON.stringify(payload));
+    const path = '/v1/quotes';
+    const request = {
+      method: 'POST',
+      path,
+      authorization: authorization('POST', path, body),
+      body,
+    };
+
+    operator.createQuote.mockRejectedValueOnce(
+      new EscrowError('mint_unavailable', 'mint leaked private detail')
+    );
+    await expect(service.handle(request)).resolves.toMatchObject({
+      status: 503,
+      body: JSON.stringify({
+        category: 'service_unavailable',
+        coordination_id: null,
+      }),
+    });
+
+    operator.createQuote.mockRejectedValueOnce(new Error('internal detail'));
+    await expect(
+      service.handle({
+        ...request,
+        authorization: authorization('POST', path, body, 'retry'),
+      })
+    ).resolves.toMatchObject({
+      status: 500,
+      body: JSON.stringify({
+        category: 'service_unavailable',
+        coordination_id: null,
+      }),
+    });
+  });
+
   it('drains an oversized request without destroying its socket', async () => {
     const resume = vi.fn();
     const destroy = vi.fn();
@@ -168,7 +237,8 @@ function setup() {
 function authorization(
   method: string,
   path: string,
-  body?: Uint8Array
+  body?: Uint8Array,
+  nonce?: string
 ): string {
   const event = signer.sign({
     kind: KIND_HTTP_AUTH,
@@ -179,6 +249,7 @@ function authorization(
       ...(body === undefined
         ? []
         : [['payload', createHash('sha256').update(body).digest('hex')]]),
+      ...(nonce === undefined ? [] : [['nonce', nonce]]),
     ],
     content: '',
   });

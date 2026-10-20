@@ -8,6 +8,7 @@ import type {
   OperatorStore,
   PayoutTarget,
   PersistedFork,
+  QuoteBindingMode,
 } from '../../../src/lib/store/operator-store.ts';
 import { OPERATOR } from './keys.ts';
 
@@ -16,6 +17,7 @@ export class MemoryOperatorStore implements OperatorStore {
   readonly quotes = new Map<string, SignedQuote>();
   readonly quoteCallers = new Map<string, string>();
   readonly quoteBindings = new Map<string, string>();
+  readonly quoteBindingModes = new Map<string, QuoteBindingMode>();
   readonly payouts = new Map<string, PayoutTarget>();
   readonly fundingLocktimes = new Map<string, number>();
   readonly outbox = new Map<
@@ -24,6 +26,7 @@ export class MemoryOperatorStore implements OperatorStore {
   >();
   readonly forks = new Map<string, PersistedFork>();
   readonly eventObservations = new Map<string, number>();
+  readonly eventObservationMigrations = new Set<string>();
   readonly nip98Replay = new Map<string, number>();
 
   initialize(): Promise<void> {
@@ -49,7 +52,19 @@ export class MemoryOperatorStore implements OperatorStore {
       return Promise.resolve(false);
     }
     this.quoteBindings.set(key, coordinationId);
+    this.quoteBindingModes.set(key, 'first_seen_v1');
     return Promise.resolve(true);
+  }
+
+  getQuoteBindingMode(
+    key: string,
+    coordinationId: string
+  ): Promise<QuoteBindingMode> {
+    return Promise.resolve(
+      this.quoteBindings.get(key) === coordinationId
+        ? (this.quoteBindingModes.get(key) ?? 'legacy')
+        : 'none'
+    );
   }
 
   getQuote(key: string, caller: string): Promise<SignedQuote | undefined> {
@@ -120,15 +135,26 @@ export class MemoryOperatorStore implements OperatorStore {
     return Promise.resolve(observedAt);
   }
 
+  isEventObservationMigrationComplete(
+    coordinationId: string
+  ): Promise<boolean> {
+    return Promise.resolve(this.eventObservationMigrations.has(coordinationId));
+  }
+
+  completeEventObservationMigration(coordinationId: string): Promise<void> {
+    this.eventObservationMigrations.add(coordinationId);
+    return Promise.resolve();
+  }
+
   useNip98Event(
     eventId: string,
     expiresAt: number,
     now: number
   ): Promise<boolean> {
-    for (const [usedId, expiry] of this.nip98Replay) {
-      if (expiry < now) this.nip98Replay.delete(usedId);
+    const existing = this.nip98Replay.get(eventId);
+    if (existing !== undefined && existing >= now) {
+      return Promise.resolve(false);
     }
-    if (this.nip98Replay.has(eventId)) return Promise.resolve(false);
     this.nip98Replay.set(eventId, expiresAt);
     return Promise.resolve(true);
   }

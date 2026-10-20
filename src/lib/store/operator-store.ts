@@ -53,6 +53,7 @@ const QuoteBindingEntry = z
     type: z.literal('quote_binding'),
     key: z.string().regex(/^sha256:[0-9a-f]{64}$/),
     coordinationId: HexEventId,
+    observationPolicy: z.literal('first_seen_v1').optional(),
   })
   .strict();
 
@@ -104,6 +105,14 @@ const EventObservationEntry = z
   })
   .strict();
 
+const EventObservationMigrationEntry = z
+  .object({
+    revision: z.number().int().positive(),
+    type: z.literal('event_observation_migration'),
+    coordinationId: HexEventId,
+  })
+  .strict();
+
 const Nip98ReplayEntry = z
   .object({
     revision: z.number().int().positive(),
@@ -121,6 +130,7 @@ const StoreEntry = z.discriminatedUnion('type', [
   OutboxEntry,
   ForkEntry,
   EventObservationEntry,
+  EventObservationMigrationEntry,
   Nip98ReplayEntry,
 ]);
 
@@ -146,6 +156,8 @@ export type PersistedFork = {
   actions: readonly NostrEvent[];
 };
 
+export type QuoteBindingMode = 'none' | 'legacy' | 'first_seen_v1';
+
 export interface OperatorStore {
   initialize(): Promise<void>;
   putQuote(
@@ -158,6 +170,10 @@ export interface OperatorStore {
     caller: string
   ): Promise<SignedQuoteValue | undefined>;
   bindQuote(commitmentDigest: string, coordinationId: string): Promise<boolean>;
+  getQuoteBindingMode(
+    commitmentDigest: string,
+    coordinationId: string
+  ): Promise<QuoteBindingMode>;
   putPayout(coordinationId: string, payout: PayoutTarget): Promise<void>;
   getPayout(coordinationId: string): Promise<PayoutTarget | undefined>;
   getOrCreateFundingLocktime(
@@ -169,6 +185,8 @@ export interface OperatorStore {
   putFork(fork: PersistedFork): Promise<void>;
   getFork(coordinationId: string): Promise<PersistedFork | undefined>;
   observeEvent(eventId: string, observedAt: number): Promise<number>;
+  isEventObservationMigrationComplete(coordinationId: string): Promise<boolean>;
+  completeEventObservationMigration(coordinationId: string): Promise<void>;
   useNip98Event(
     eventId: string,
     expiresAt: number,
@@ -184,6 +202,7 @@ type StoreState = {
   outbox: Map<string, OutboxItem>;
   forks: Map<string, PersistedFork>;
   eventObservations: Map<string, number>;
+  eventObservationMigrations: Set<string>;
   nip98Replay: Map<string, number>;
 };
 
@@ -191,7 +210,7 @@ type StoredQuote = {
   quote: SignedQuoteValue;
   caller?: string;
   storedAt?: number;
-  coordinationIds: Set<string>;
+  coordinationIds: Map<string, Exclude<QuoteBindingMode, 'none'>>;
 };
 
 const QUOTE_RATE_WINDOW_SECONDS = 60;
@@ -305,8 +324,27 @@ export class EncryptedOperatorStore implements OperatorStore {
         type: 'quote_binding',
         key: parsedKey.data,
         coordinationId: parsedId.data,
+        observationPolicy: 'first_seen_v1',
       });
       return true;
+    });
+  }
+
+  async getQuoteBindingMode(
+    key: string,
+    coordinationId: string
+  ): Promise<QuoteBindingMode> {
+    const parsedKey = QuoteBindingEntry.shape.key.safeParse(key);
+    const parsedId = HexEventId.safeParse(coordinationId);
+    if (!parsedKey.success || !parsedId.success) {
+      invalid('quote binding lookup is invalid');
+    }
+    return this.#exclusive(async () => {
+      return (
+        (await this.#read()).quotes
+          .get(parsedKey.data)
+          ?.coordinationIds.get(parsedId.data) ?? 'none'
+      );
     });
   }
 
@@ -467,6 +505,32 @@ export class EncryptedOperatorStore implements OperatorStore {
     });
   }
 
+  async isEventObservationMigrationComplete(
+    coordinationId: string
+  ): Promise<boolean> {
+    const id = HexEventId.safeParse(coordinationId);
+    if (!id.success) invalid('event observation migration lookup is invalid');
+    return this.#exclusive(async () =>
+      (await this.#read()).eventObservationMigrations.has(id.data)
+    );
+  }
+
+  async completeEventObservationMigration(
+    coordinationId: string
+  ): Promise<void> {
+    const id = HexEventId.safeParse(coordinationId);
+    if (!id.success) invalid('event observation migration is invalid');
+    await this.#exclusive(async () => {
+      const state = await this.#read();
+      if (state.eventObservationMigrations.has(id.data)) return;
+      await this.#append({
+        revision: state.revision + 1,
+        type: 'event_observation_migration',
+        coordinationId: id.data,
+      });
+    });
+  }
+
   async useNip98Event(
     eventId: string,
     expiresAt: number,
@@ -484,26 +548,14 @@ export class EncryptedOperatorStore implements OperatorStore {
     }
     return this.#exclusive(async () => {
       const state = await this.#read();
-      const next = cloneState(state);
-      let pruned = false;
-      for (const [usedId, expiry] of next.nip98Replay) {
-        if (expiry < now) {
-          next.nip98Replay.delete(usedId);
-          pruned = true;
-        }
-      }
-      if (next.nip98Replay.has(id.data)) return false;
-      if (pruned) {
-        next.nip98Replay.set(id.data, expiresAt);
-        await this.#rewrite(next);
-      } else {
-        await this.#append({
-          revision: state.revision + 1,
-          type: 'nip98_replay',
-          eventId: id.data,
-          expiresAt,
-        });
-      }
+      const existing = state.nip98Replay.get(id.data);
+      if (existing !== undefined && existing >= now) return false;
+      await this.#append({
+        revision: state.revision + 1,
+        type: 'nip98_replay',
+        eventId: id.data,
+        expiresAt,
+      });
       return true;
     });
   }
@@ -578,6 +630,9 @@ export class EncryptedOperatorStore implements OperatorStore {
       }
     }
     if (changed) {
+      for (const [eventId, expiry] of next.nip98Replay) {
+        if (expiry < now) next.nip98Replay.delete(eventId);
+      }
       await this.#rewrite(next);
       return next;
     }
@@ -602,11 +657,17 @@ export class EncryptedOperatorStore implements OperatorStore {
         ...(stored.caller === undefined ? {} : { caller: stored.caller }),
         ...(stored.storedAt === undefined ? {} : { storedAt: stored.storedAt }),
       });
-      for (const coordinationId of stored.coordinationIds) {
+      for (const [
+        coordinationId,
+        observationPolicy,
+      ] of stored.coordinationIds) {
         add({
           type: 'quote_binding',
           key,
           coordinationId,
+          ...(observationPolicy === 'first_seen_v1'
+            ? { observationPolicy }
+            : {}),
         });
       }
     }
@@ -629,6 +690,9 @@ export class EncryptedOperatorStore implements OperatorStore {
     }
     for (const [eventId, observedAt] of state.eventObservations) {
       add({ type: 'event_observation', eventId, observedAt });
+    }
+    for (const coordinationId of state.eventObservationMigrations) {
+      add({ type: 'event_observation_migration', coordinationId });
     }
     for (const [eventId, expiresAt] of state.nip98Replay) {
       add({ type: 'nip98_replay', eventId, expiresAt });
@@ -668,6 +732,7 @@ export class EncryptedOperatorStore implements OperatorStore {
         await handle.close();
       }
     } catch {
+      this.#cachedState = undefined;
       throw unavailable('operator store could not be persisted');
     }
     if (this.#cachedState === undefined) {
@@ -717,13 +782,16 @@ function applyEntry(
       quote: entry.quote,
       ...(entry.caller === undefined ? {} : { caller: entry.caller }),
       ...(entry.storedAt === undefined ? {} : { storedAt: entry.storedAt }),
-      coordinationIds: new Set(),
+      coordinationIds: new Map(),
     });
   }
   if (entry.type === 'quote_binding') {
     const quote = state.quotes.get(entry.key);
     if (quote === undefined) throw new Error();
-    quote.coordinationIds.add(entry.coordinationId);
+    quote.coordinationIds.set(
+      entry.coordinationId,
+      entry.observationPolicy ?? 'legacy'
+    );
   }
   if (entry.type === 'payout') {
     state.payouts.set(entry.coordinationId, entry.payout);
@@ -751,6 +819,9 @@ function applyEntry(
     !state.eventObservations.has(entry.eventId)
   ) {
     state.eventObservations.set(entry.eventId, entry.observedAt);
+  }
+  if (entry.type === 'event_observation_migration') {
+    state.eventObservationMigrations.add(entry.coordinationId);
   }
   if (entry.type === 'nip98_replay') {
     state.nip98Replay.set(entry.eventId, entry.expiresAt);
@@ -791,6 +862,7 @@ function emptyState(): StoreState {
     outbox: new Map(),
     forks: new Map(),
     eventObservations: new Map(),
+    eventObservationMigrations: new Set(),
     nip98Replay: new Map(),
   };
 }
@@ -801,7 +873,7 @@ function cloneState(state: StoreState): StoreState {
     quotes: new Map(
       [...state.quotes].map(([key, stored]) => [
         key,
-        { ...stored, coordinationIds: new Set(stored.coordinationIds) },
+        { ...stored, coordinationIds: new Map(stored.coordinationIds) },
       ])
     ),
     payouts: new Map(state.payouts),
@@ -809,6 +881,7 @@ function cloneState(state: StoreState): StoreState {
     outbox: new Map(state.outbox),
     forks: new Map(state.forks),
     eventObservations: new Map(state.eventObservations),
+    eventObservationMigrations: new Set(state.eventObservationMigrations),
     nip98Replay: new Map(state.nip98Replay),
   };
 }

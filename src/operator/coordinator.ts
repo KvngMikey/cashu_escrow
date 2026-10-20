@@ -143,7 +143,8 @@ export class CoordinationOperator {
       });
     });
     const roots = await this.#relay.query([rootFilter]);
-    for (const root of roots) await this.#ingestRoot(root, now);
+    const rootsReceivedAt = this.#clock();
+    for (const root of roots) await this.#ingestRoot(root, rootsReceivedAt);
     await Promise.all(this.#rootQueue);
   }
 
@@ -411,7 +412,20 @@ export class CoordinationOperator {
     ) {
       return;
     }
-    const rootObservedAt = await this.#store.observeEvent(event.id, now);
+    const bindingMode = await this.#store.getQuoteBindingMode(
+      commitment.digest,
+      event.id
+    );
+    const custodyEvidence = await this.#custodyStore.get(event.id);
+    const migrationComplete =
+      await this.#store.isEventObservationMigrationComplete(event.id);
+    const migrateLegacyObservations =
+      !migrationComplete &&
+      (bindingMode === 'legacy' || custodyEvidence !== undefined);
+    const rootObservedAt = await this.#store.observeEvent(
+      event.id,
+      migrateLegacyObservations ? event.created_at : now
+    );
     const effectiveRootAt = Math.max(event.created_at, rootObservedAt);
     if (
       effectiveRootAt >= validated.value.descriptorExpiresAt ||
@@ -419,12 +433,18 @@ export class CoordinationOperator {
     ) {
       return;
     }
-    if (!(await this.#store.bindQuote(commitment.digest, event.id))) return;
+    if (
+      bindingMode === 'none' &&
+      !(await this.#store.bindQuote(commitment.digest, event.id))
+    ) {
+      return;
+    }
 
     const persistedFork = await this.#store.getFork(event.id);
     const existing = await this.#relay.query([
       { kinds: [KIND_COORDINATION_ACTION], '#e': [event.id] },
     ]);
+    const existingReceivedAt = this.#clock();
     const actions = new Map(
       [...(persistedFork?.actions ?? []), ...existing].map(
         (action) => [action.id, action] as const
@@ -434,7 +454,10 @@ export class CoordinationOperator {
     for (const action of actions.values()) {
       actionObservedAt.set(
         action.id,
-        await this.#store.observeEvent(action.id, now)
+        await this.#store.observeEvent(
+          action.id,
+          migrateLegacyObservations ? action.created_at : existingReceivedAt
+        )
       );
     }
     const coordination: Coordination = {
@@ -453,7 +476,9 @@ export class CoordinationOperator {
         const current = this.#coordinations.get(event.id);
         if (current === undefined) return;
         current.actions.set(action.id, action);
-        current.actionObservedAt.set(action.id, observedAt);
+        if (!current.actionObservedAt.has(action.id)) {
+          current.actionObservedAt.set(action.id, observedAt);
+        }
         void this.#exclusive(event.id, async () => {
           const firstSeen = await this.#store.observeEvent(
             action.id,
@@ -467,10 +492,18 @@ export class CoordinationOperator {
     const caughtUp = await this.#relay.query([
       { kinds: [KIND_COORDINATION_ACTION], '#e': [event.id] },
     ]);
+    const caughtUpReceivedAt = this.#clock();
     for (const action of caughtUp) {
-      await this.#rememberAction(coordination, action, now);
+      await this.#rememberAction(
+        coordination,
+        action,
+        migrateLegacyObservations ? action.created_at : caughtUpReceivedAt
+      );
     }
-    await this.#exclusive(event.id, () => this.#evaluate(event.id, now));
+    await this.#store.completeEventObservationMigration(event.id);
+    await this.#exclusive(event.id, () =>
+      this.#evaluate(event.id, caughtUpReceivedAt)
+    );
   }
 
   async #evaluate(coordinationId: string, now: number): Promise<void> {

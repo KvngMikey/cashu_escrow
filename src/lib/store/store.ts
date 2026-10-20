@@ -128,6 +128,7 @@ export class EncryptedCustodyStore implements CustodyStore {
   readonly #path: string;
   readonly #key: Uint8Array;
   #records: Map<string, CustodyRecord> | undefined;
+  #writeUncertain = false;
   #tail: Promise<void> = Promise.resolve();
 
   constructor(path: string, key: Uint8Array) {
@@ -154,6 +155,11 @@ export class EncryptedCustodyStore implements CustodyStore {
   }
 
   async #state(): Promise<Map<string, CustodyRecord>> {
+    if (this.#writeUncertain) {
+      throw storageError(
+        'custody store write outcome is uncertain; restart is required'
+      );
+    }
     if (this.#records !== undefined) return this.#records;
     this.#records = await this.#load();
     return this.#records;
@@ -259,6 +265,8 @@ export class EncryptedCustodyStore implements CustodyStore {
         await handle.close();
       }
     } catch {
+      this.#records = undefined;
+      this.#writeUncertain = true;
       throw storageError('custody record could not be persisted');
     }
     records.set(record.data.coordinationId, record.data);

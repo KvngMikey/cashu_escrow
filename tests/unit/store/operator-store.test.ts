@@ -1,6 +1,7 @@
-import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, open, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createSignedQuote,
@@ -47,6 +48,9 @@ describe('EncryptedOperatorStore', () => {
     await expect(store.bindQuote(key, coordinationId)).resolves.toBe(true);
     await expect(store.bindQuote(key, coordinationId)).resolves.toBe(true);
     await expect(store.bindQuote(key, 'cc'.repeat(32))).resolves.toBe(false);
+    await expect(store.getQuoteBindingMode(key, coordinationId)).resolves.toBe(
+      'first_seen_v1'
+    );
 
     await store.putPayout(coordinationId, {
       type: 'bolt11',
@@ -197,6 +201,48 @@ describe('EncryptedOperatorStore', () => {
       false
     );
     await expect(restarted.useNip98Event(authId, 221, 161)).resolves.toBe(true);
+    await restarted.completeEventObservationMigration(eventId);
+    await expect(
+      restarted.isEventObservationMigrationComplete(eventId)
+    ).resolves.toBe(true);
+    expect((await readFile(path, 'utf8')).trim().split('\n')).toHaveLength(4);
+
+    const reloaded = new EncryptedOperatorStore(path, key);
+    await expect(
+      reloaded.isEventObservationMigrationComplete(eventId)
+    ).resolves.toBe(true);
+  });
+
+  it('reloads the journal after an uncertain append outcome', async () => {
+    const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-operator-${crypto.randomUUID()}/store.jsonl`;
+    const key = signer.deriveOperatorStoreKey();
+    const store = new EncryptedOperatorStore(path, key);
+    const quote = quoteAt(1_800_000_000, 1);
+    const commitment = quoteCommitment(quote).digest;
+    await mkdir(dirname(path), { recursive: true });
+    const probe = await open(path, 'a');
+    const fileHandlePrototype = Object.getPrototypeOf(probe) as {
+      sync(): Promise<void>;
+    };
+    await probe.close();
+    const sync = vi
+      .spyOn(fileHandlePrototype, 'sync')
+      .mockRejectedValueOnce(new Error('simulated sync failure'));
+
+    await expect(
+      store.putQuote(quote, OPERATOR.pubkey, 1_800_000_000)
+    ).rejects.toMatchObject({ category: 'storage_unavailable' });
+    sync.mockRestore();
+
+    await expect(store.getQuote(commitment, OPERATOR.pubkey)).resolves.toEqual(
+      quote
+    );
+    await expect(
+      store.getOrCreateFundingLocktime('bb'.repeat(32), 1_800_001_000)
+    ).resolves.toBe(1_800_001_000);
+
+    const restarted = new EncryptedOperatorStore(path, key);
+    await expect(restarted.initialize()).resolves.toBeUndefined();
   });
 
   it('rejects corruption in a newline-committed operator record', async () => {

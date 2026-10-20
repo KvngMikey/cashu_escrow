@@ -14,6 +14,8 @@ import { OPERATOR } from './keys.ts';
 export class MemoryOperatorStore implements OperatorStore {
   beforeStageOutbox: ((key: string) => Promise<void> | void) | undefined;
   readonly quotes = new Map<string, SignedQuote>();
+  readonly quoteCallers = new Map<string, string>();
+  readonly quoteBindings = new Map<string, string>();
   readonly payouts = new Map<string, PayoutTarget>();
   readonly fundingLocktimes = new Map<string, number>();
   readonly outbox = new Map<
@@ -21,6 +23,8 @@ export class MemoryOperatorStore implements OperatorStore {
     { key: string; event: NostrEvent; published: boolean }
   >();
   readonly forks = new Map<string, PersistedFork>();
+  readonly eventObservations = new Map<string, number>();
+  readonly nip98Replay = new Map<string, number>();
 
   initialize(): Promise<void> {
     return Promise.resolve();
@@ -28,23 +32,30 @@ export class MemoryOperatorStore implements OperatorStore {
 
   putQuote(
     quote: SignedQuote,
-    _caller = OPERATOR.pubkey,
+    caller = OPERATOR.pubkey,
     _storedAt = quote.quote.expires_at - 1
   ): Promise<string> {
     const key = quoteCommitment(quote).digest;
     this.quotes.set(key, quote);
+    this.quoteCallers.set(key, caller);
     return Promise.resolve(key);
   }
 
-  bindQuote(key: string, coordinationId: string): Promise<void> {
+  bindQuote(key: string, coordinationId: string): Promise<boolean> {
     if (!this.quotes.has(key))
       return Promise.reject(new Error('missing quote'));
-    void coordinationId;
-    return Promise.resolve();
+    const existing = this.quoteBindings.get(key);
+    if (existing !== undefined && existing !== coordinationId) {
+      return Promise.resolve(false);
+    }
+    this.quoteBindings.set(key, coordinationId);
+    return Promise.resolve(true);
   }
 
-  getQuote(key: string): Promise<SignedQuote | undefined> {
-    return Promise.resolve(this.quotes.get(key));
+  getQuote(key: string, caller: string): Promise<SignedQuote | undefined> {
+    return Promise.resolve(
+      this.quoteCallers.get(key) === caller ? this.quotes.get(key) : undefined
+    );
   }
 
   putPayout(coordinationId: string, payout: PayoutTarget): Promise<void> {
@@ -100,5 +111,25 @@ export class MemoryOperatorStore implements OperatorStore {
 
   getFork(coordinationId: string): Promise<PersistedFork | undefined> {
     return Promise.resolve(this.forks.get(coordinationId));
+  }
+
+  observeEvent(eventId: string, observedAt: number): Promise<number> {
+    const existing = this.eventObservations.get(eventId);
+    if (existing !== undefined) return Promise.resolve(existing);
+    this.eventObservations.set(eventId, observedAt);
+    return Promise.resolve(observedAt);
+  }
+
+  useNip98Event(
+    eventId: string,
+    expiresAt: number,
+    now: number
+  ): Promise<boolean> {
+    for (const [usedId, expiry] of this.nip98Replay) {
+      if (expiry < now) this.nip98Replay.delete(usedId);
+    }
+    if (this.nip98Replay.has(eventId)) return Promise.resolve(false);
+    this.nip98Replay.set(eventId, expiresAt);
+    return Promise.resolve(true);
   }
 }

@@ -16,6 +16,8 @@ const PayMetadata = z
   })
   .passthrough();
 const InvoiceResponse = z.object({ pr: z.string().min(1) }).passthrough();
+const REQUEST_TIMEOUT_MS = 10_000;
+const RETRY_BACKOFF_MS = [250, 750] as const;
 
 /** Resolve a Lightning Address and request a fixed-amount LNURL-pay invoice. */
 export class LnurlInvoiceSource implements LightningInvoiceSource {
@@ -37,7 +39,7 @@ export class LnurlInvoiceSource implements LightningInvoiceSource {
       throw new EscrowError('content_invalid', 'invoice amount is invalid');
     }
     try {
-      const metadataResponse = await fetch(
+      const metadataResponse = await fetchLnurl(
         `https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`
       );
       if (!metadataResponse.ok) throw new Error();
@@ -55,7 +57,7 @@ export class LnurlInvoiceSource implements LightningInvoiceSource {
       const callback = new URL(metadata.callback);
       if (callback.protocol !== 'https:') throw new Error();
       callback.searchParams.set('amount', String(amountMsat));
-      const invoiceResponse = await fetch(callback);
+      const invoiceResponse = await fetchLnurl(callback);
       if (!invoiceResponse.ok) throw new Error();
       return InvoiceResponse.parse(await invoiceResponse.json()).pr;
     } catch (error) {
@@ -66,4 +68,31 @@ export class LnurlInvoiceSource implements LightningInvoiceSource {
       );
     }
   }
+}
+
+async function fetchLnurl(url: string | URL): Promise<Response> {
+  for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt += 1) {
+    if (attempt > 0) {
+      await delay(RETRY_BACKOFF_MS[attempt - 1] ?? 0);
+    }
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (response.ok || !retryableStatus(response.status)) return response;
+    } catch {
+      if (attempt === RETRY_BACKOFF_MS.length) throw new Error();
+      continue;
+    }
+    if (attempt === RETRY_BACKOFF_MS.length) throw new Error();
+  }
+  throw new Error();
+}
+
+function retryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

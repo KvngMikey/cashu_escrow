@@ -371,8 +371,10 @@ export function appendAction<T, P>(input: {
   state: ChainState<P>;
   event: NostrEvent;
   profile: ProfileAdapter<T, P>;
+  observedAt?: number;
 }): ChainResult<ChainState<P>> {
   const { root, state, event, profile } = input;
+  const effectiveAt = Math.max(event.created_at, input.observedAt ?? 0);
 
   if (state.forked !== null) return fail('frozen_forked');
   if (event.kind !== KIND_COORDINATION_ACTION) return fail('action_kind');
@@ -403,7 +405,7 @@ export function appendAction<T, P>(input: {
     return fail('action_data');
   }
 
-  if (action === 'core/accept' && event.created_at >= root.descriptorExpiresAt)
+  if (action === 'core/accept' && effectiveAt >= root.descriptorExpiresAt)
     return fail('descriptor_expired');
 
   const facts = state.facts;
@@ -453,7 +455,7 @@ export function appendAction<T, P>(input: {
     action,
     data,
     signer,
-    at: event.created_at,
+    at: effectiveAt,
   });
   if (!authorized.ok) return authorized;
 
@@ -464,7 +466,7 @@ export function appendAction<T, P>(input: {
     facts: next,
     applied: [
       ...state.applied,
-      { id: event.id.toLowerCase(), action, signer, at: event.created_at },
+      { id: event.id.toLowerCase(), action, signer, at: effectiveAt },
     ],
   });
 }
@@ -551,6 +553,7 @@ export function deriveState<T, P>(input: {
   root: ValidatedRoot<T>;
   actions: readonly NostrEvent[];
   profile: ProfileAdapter<T, P>;
+  observedAt?: ReadonlyMap<string, number>;
 }): DerivedState<P> {
   const { root, profile } = input;
   const rejected: { id: string; reason: RejectionReason }[] = [];
@@ -583,11 +586,20 @@ export function deriveState<T, P>(input: {
     );
     if (candidates.length === 0) break;
 
-    const outcomes = candidates.map(([id, event]) => ({
-      id,
-      event,
-      result: appendAction({ root, state, event, profile }),
-    }));
+    const outcomes = candidates.map(([id, event]) => {
+      const observedAt = input.observedAt?.get(id);
+      return {
+        id,
+        event,
+        result: appendAction({
+          root,
+          state,
+          event,
+          profile,
+          ...(observedAt === undefined ? {} : { observedAt }),
+        }),
+      };
+    });
     const valid = outcomes.filter((outcome) => outcome.result.ok);
 
     if (valid.length > 1) {

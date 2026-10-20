@@ -6,7 +6,6 @@ import type {
   PendingCustodySpend,
 } from '../store/store.ts';
 import type { LightningInvoiceSource } from '../lightning/invoice.ts';
-import { computeFees, type RefundFeeMode } from './fees.ts';
 import {
   fingerprintProofSecrets,
   verifyLockedToken,
@@ -21,10 +20,6 @@ import type {
 } from './mint.ts';
 
 export type CustodyPolicy = {
-  feesEnabled: boolean;
-  operatorFeeBps: number;
-  operatorMinFeeSats: number;
-  refundFeeMode: RefundFeeMode;
   releaseSafetyMarginSeconds: number;
   returnLnOverage: boolean;
   operatorLnAddress: string;
@@ -62,6 +57,9 @@ export class CustodyEngine {
   readonly #policy: CustodyPolicy;
   readonly #invoiceSource: LightningInvoiceSource | undefined;
   readonly #queues = new Map<string, Promise<void>>();
+  readonly #tokenBindings = new Map<string, string>();
+  readonly #fingerprintBindings = new Map<string, string>();
+  #custodyIndexReady = false;
   #holdTail: Promise<void> = Promise.resolve();
 
   constructor(input: {
@@ -79,9 +77,9 @@ export class CustodyEngine {
   }
 
   async reconcile(now: number): Promise<void> {
-    const spending = (await this.#store.all()).filter(
-      (record) => record.status === 'spending'
-    );
+    const records = await this.#store.all();
+    await this.#ensureCustodyIndex(records);
+    const spending = records.filter((record) => record.status === 'spending');
     let firstError: Error | undefined;
     for (const record of spending) {
       try {
@@ -142,14 +140,14 @@ export class CustodyEngine {
       request.expectation,
       this.#mint
     );
-    const records = await this.#backfillFingerprints(await this.#store.all());
-    const duplicate = records.find(
-      (record) =>
-        record.coordinationId !== request.expectation.coordinationId &&
-        (record.token === request.token ||
-          record.tokenFingerprint === verified.tokenFingerprint)
-    );
-    if (duplicate !== undefined) {
+    await this.#ensureCustodyIndex();
+    const duplicateId =
+      this.#tokenBindings.get(request.token) ??
+      this.#fingerprintBindings.get(verified.tokenFingerprint);
+    if (
+      duplicateId !== undefined &&
+      duplicateId !== request.expectation.coordinationId
+    ) {
       conflict(
         request.expectation.coordinationId,
         'custody token is already bound to another coordination'
@@ -171,7 +169,31 @@ export class CustodyEngine {
       observedAt: request.observedAt,
     };
     await this.#store.append(record);
+    this.#indexRecord(record);
     return record;
+  }
+
+  async #ensureCustodyIndex(
+    initialRecords?: readonly CustodyRecord[]
+  ): Promise<void> {
+    if (this.#custodyIndexReady) return;
+    const records = await this.#backfillFingerprints(
+      initialRecords ?? (await this.#store.all())
+    );
+    this.#tokenBindings.clear();
+    this.#fingerprintBindings.clear();
+    for (const record of records) this.#indexRecord(record);
+    this.#custodyIndexReady = true;
+  }
+
+  #indexRecord(record: CustodyRecord): void {
+    this.#tokenBindings.set(record.token, record.coordinationId);
+    if (record.tokenFingerprint !== undefined) {
+      this.#fingerprintBindings.set(
+        record.tokenFingerprint,
+        record.coordinationId
+      );
+    }
   }
 
   async #backfillFingerprints(
@@ -373,16 +395,12 @@ export class CustodyEngine {
       );
     }
     await this.#requireUnspent(record);
-    const fees = computeFees({
-      gross: record.grossSats,
-      bps: this.#policy.operatorFeeBps,
-      minFee: this.#policy.operatorMinFeeSats,
-      enabled: this.#policy.feesEnabled,
-      networkCost: record.inputFeeSats,
-      operation: 'refund',
-      refundFeeMode: this.#policy.refundFeeMode,
-    });
-    assertBoundAmounts(input.coordinationId, input.amounts, fees);
+    const fees = boundAmounts(
+      input.coordinationId,
+      input.amounts,
+      record.grossSats,
+      record.inputFeeSats
+    );
     const prepared = await this.#mint.prepareP2pkSpend({
       token: record.token,
       amount: fees.payout,
@@ -892,17 +910,12 @@ export class CustodyEngine {
   }
 
   #settlementFees(record: CustodyRecord, amounts: BoundAmounts) {
-    const fees = computeFees({
-      gross: record.grossSats,
-      bps: this.#policy.operatorFeeBps,
-      minFee: this.#policy.operatorMinFeeSats,
-      enabled: this.#policy.feesEnabled,
-      networkCost: record.networkCostSats,
-      operation: 'settlement',
-      refundFeeMode: this.#policy.refundFeeMode,
-    });
-    assertBoundAmounts(record.coordinationId, amounts, fees);
-    return fees;
+    return boundAmounts(
+      record.coordinationId,
+      amounts,
+      record.grossSats,
+      record.networkCostSats
+    );
   }
 
   async #requireOperatorFeeInvoice(
@@ -980,27 +993,35 @@ function requirePendingSpend(record: CustodyRecord): PendingCustodySpend {
   return record.spend;
 }
 
-function assertBoundAmounts(
+function boundAmounts(
   coordinationId: string,
   bound: BoundAmounts,
-  computed: {
-    gross: number;
-    operatorFee: number;
-    networkCost: number;
-    payout: number;
-  }
-): void {
+  expectedGross: number,
+  expectedNetworkCost: number
+): {
+  gross: number;
+  operatorFee: number;
+  networkCost: number;
+  payout: number;
+} {
   if (
-    bound.grossSats !== computed.gross ||
-    bound.operatorFeeSats !== computed.operatorFee ||
-    bound.networkCostSats !== computed.networkCost ||
-    bound.payoutSats !== computed.payout
+    bound.grossSats !== expectedGross ||
+    bound.networkCostSats !== expectedNetworkCost ||
+    !Number.isSafeInteger(bound.operatorFeeSats) ||
+    bound.operatorFeeSats < 0 ||
+    !Number.isSafeInteger(bound.payoutSats) ||
+    bound.payoutSats <= 0 ||
+    bound.operatorFeeSats + bound.networkCostSats + bound.payoutSats !==
+      bound.grossSats
   ) {
-    custodyInvalid(
-      coordinationId,
-      'bound quote accounting does not match policy'
-    );
+    custodyInvalid(coordinationId, 'bound quote accounting is invalid');
   }
+  return {
+    gross: bound.grossSats,
+    operatorFee: bound.operatorFeeSats,
+    networkCost: bound.networkCostSats,
+    payout: bound.payoutSats,
+  };
 }
 
 function expiryOverlay(

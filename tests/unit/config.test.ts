@@ -118,6 +118,20 @@ describe('configuration', () => {
 
     expect(isEscrowError(failure) && failure.category).toBe('config_invalid');
   });
+
+  it('allows cleartext relays only on loopback hosts', () => {
+    expect(() =>
+      loadConfig({ ...environment(), NOSTR_RELAYS: 'ws://127.0.0.1:17000' })
+    ).not.toThrow();
+    expect(() =>
+      loadConfig({ ...environment(), NOSTR_RELAYS: 'ws://[::1]:17000' })
+    ).not.toThrow();
+
+    const failure = capture(() =>
+      loadConfig({ ...environment(), NOSTR_RELAYS: 'ws://relay.example.com' })
+    );
+    expect(isEscrowError(failure) && failure.category).toBe('config_invalid');
+  });
 });
 
 function capture(run: () => unknown): unknown {

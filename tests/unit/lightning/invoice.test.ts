@@ -31,7 +31,11 @@ describe('LnurlInvoiceSource', () => {
     ).resolves.toBe('lnbc3fake');
     expect(fetch).toHaveBeenNthCalledWith(
       1,
-      'https://example.com/.well-known/lnurlp/operator'
+      'https://example.com/.well-known/lnurlp/operator',
+      expect.objectContaining({ signal: expect.anything() })
+    );
+    expect(fetch.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({ signal: expect.anything() })
     );
     expect(String(fetch.mock.calls[1]?.[0])).toBe(
       'https://pay.example.com/callback?nonce=1&amount=3000'
@@ -63,12 +67,42 @@ describe('LnurlInvoiceSource', () => {
   });
 
   it('returns a typed error without exposing the failed endpoint', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('secret URL')));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 400 }))
+    );
     await expect(
       new LnurlInvoiceSource().createInvoice('operator@example.com', 3)
     ).rejects.toMatchObject({
       category: 'lightning_unavailable',
       message: 'operator Lightning invoice request failed',
     });
+  });
+
+  it('retries transient provider failures with a bounded backoff', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockRejectedValueOnce(new Error('temporary network failure'))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            tag: 'payRequest',
+            callback: 'https://pay.example.com/callback',
+            minSendable: 1_000,
+            maxSendable: 100_000,
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ pr: 'lnbc3fake' }), { status: 200 })
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(
+      new LnurlInvoiceSource().createInvoice('operator@example.com', 3)
+    ).resolves.toBe('lnbc3fake');
+    expect(fetch).toHaveBeenCalledTimes(4);
   });
 });

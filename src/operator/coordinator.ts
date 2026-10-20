@@ -5,7 +5,6 @@ import type {
   CustodyEngine,
   SettlementPayout,
 } from '../lib/cashu/custody.ts';
-import { computeFees } from '../lib/cashu/fees.ts';
 import {
   createSignedQuote,
   quoteCommitment,
@@ -89,6 +88,7 @@ type Coordination = {
   root: ValidatedRoot<SwapTerms>;
   quote: SignedQuote;
   actions: Map<string, NostrEvent>;
+  actionObservedAt: Map<string, number>;
   subscription: RelaySubscription;
 };
 
@@ -399,7 +399,10 @@ export class CoordinationOperator {
 
     const commitment = validated.value.content.commitments?.quote;
     if (commitment === undefined) return;
-    const quote = await this.#store.getQuote(commitment.digest);
+    const quote = await this.#store.getQuote(
+      commitment.digest,
+      validated.value.proposer
+    );
     if (
       quote === undefined ||
       quoteCommitment(quote).digest !== commitment.digest ||
@@ -408,7 +411,15 @@ export class CoordinationOperator {
     ) {
       return;
     }
-    await this.#store.bindQuote(commitment.digest, event.id);
+    const rootObservedAt = await this.#store.observeEvent(event.id, now);
+    const effectiveRootAt = Math.max(event.created_at, rootObservedAt);
+    if (
+      effectiveRootAt >= validated.value.descriptorExpiresAt ||
+      !verifySignedQuote(quote, this.#signer.pubkey, effectiveRootAt)
+    ) {
+      return;
+    }
+    if (!(await this.#store.bindQuote(commitment.digest, event.id))) return;
 
     const persistedFork = await this.#store.getFork(event.id);
     const existing = await this.#relay.query([
@@ -419,22 +430,37 @@ export class CoordinationOperator {
         (action) => [action.id, action] as const
       )
     );
+    const actionObservedAt = new Map<string, number>();
+    for (const action of actions.values()) {
+      actionObservedAt.set(
+        action.id,
+        await this.#store.observeEvent(action.id, now)
+      );
+    }
     const coordination: Coordination = {
       rootEvent: event,
       root: validated.value,
       quote,
       actions,
+      actionObservedAt,
       subscription: { close: (): void => undefined },
     };
     this.#coordinations.set(event.id, coordination);
     coordination.subscription = this.#relay.subscribe(
       [{ kinds: [KIND_COORDINATION_ACTION], '#e': [event.id] }],
       (action) => {
-        const coordination = this.#coordinations.get(event.id);
-        if (coordination === undefined) return;
-        coordination.actions.set(action.id, action);
+        const observedAt = this.#clock();
+        const current = this.#coordinations.get(event.id);
+        if (current === undefined) return;
+        current.actions.set(action.id, action);
+        current.actionObservedAt.set(action.id, observedAt);
         void this.#exclusive(event.id, async () => {
-          await this.#evaluate(event.id, this.#clock());
+          const firstSeen = await this.#store.observeEvent(
+            action.id,
+            observedAt
+          );
+          current.actionObservedAt.set(action.id, firstSeen);
+          await this.#evaluate(event.id, observedAt);
         }).catch(this.#onError);
       }
     );
@@ -442,7 +468,7 @@ export class CoordinationOperator {
       { kinds: [KIND_COORDINATION_ACTION], '#e': [event.id] },
     ]);
     for (const action of caughtUp) {
-      coordination.actions.set(action.id, action);
+      await this.#rememberAction(coordination, action, now);
     }
     await this.#exclusive(event.id, () => this.#evaluate(event.id, now));
   }
@@ -541,7 +567,7 @@ export class CoordinationOperator {
     if (state.facts.refundAuthorized) {
       record = await this.#custody.refundAuthorized({
         coordinationId,
-        amounts: refundAmounts(record, coordination.quote, this.#policy.quote),
+        amounts: refundAmounts(record, coordination.quote),
         now,
       });
       if (record.payoutToken === undefined) {
@@ -632,6 +658,10 @@ export class CoordinationOperator {
     });
     const key = `action:${coordination.root.id}:${action.replace('/', '_')}:${state.tip}`;
     const staged = await this.#store.stageOutbox(key, event);
+    const observedAt = await this.#store.observeEvent(
+      staged.event.id,
+      createdAt
+    );
     const publicationState = this.#derive(coordination, createdAt);
     const permitted = appendAction({
       root: coordination.root,
@@ -649,6 +679,17 @@ export class CoordinationOperator {
     await this.#relay.publish(staged.event);
     await this.#store.markOutboxPublished(key);
     coordination.actions.set(staged.event.id, staged.event);
+    coordination.actionObservedAt.set(staged.event.id, observedAt);
+  }
+
+  async #rememberAction(
+    coordination: Coordination,
+    action: NostrEvent,
+    observedAt: number
+  ): Promise<void> {
+    const firstSeen = await this.#store.observeEvent(action.id, observedAt);
+    coordination.actions.set(action.id, action);
+    coordination.actionObservedAt.set(action.id, firstSeen);
   }
 
   async #deliver(
@@ -747,6 +788,7 @@ export class CoordinationOperator {
         (action) => action.created_at <= at
       ),
       profile: swapV1,
+      observedAt: coordination.actionObservedAt,
     });
   }
 
@@ -876,23 +918,17 @@ function boundAmounts(signed: SignedQuote): BoundAmounts {
 
 function refundAmounts(
   record: CustodyRecord,
-  signed: SignedQuote,
-  policy: QuotePolicy
+  signed: SignedQuote
 ): BoundAmounts {
-  const fees = computeFees({
-    gross: record.grossSats,
-    bps: policy.operatorFeeBps,
-    minFee: policy.operatorMinFeeSats,
-    enabled: policy.feesEnabled,
-    networkCost: record.inputFeeSats,
-    operation: 'refund',
-    refundFeeMode: signed.quote.refund_fee_mode,
-  });
+  const operatorFee =
+    signed.quote.refund_fee_mode === 'full'
+      ? signed.quote.operator_fee_sats
+      : 0;
   return {
-    grossSats: fees.gross,
-    operatorFeeSats: fees.operatorFee,
-    networkCostSats: fees.networkCost,
-    payoutSats: fees.payout,
+    grossSats: record.grossSats,
+    operatorFeeSats: operatorFee,
+    networkCostSats: record.inputFeeSats,
+    payoutSats: record.grossSats - operatorFee - record.inputFeeSats,
   };
 }
 

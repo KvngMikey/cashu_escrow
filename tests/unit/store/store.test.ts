@@ -1,4 +1,4 @@
-import { appendFile, readFile, stat } from 'node:fs/promises';
+import { appendFile, readFile, stat, writeFile } from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
 
@@ -102,8 +102,31 @@ describe('EncryptedCustodyStore', () => {
     await store.append(base);
     await appendFile(path, '{"invalid":true}\n');
 
-    await expect(store.all()).rejects.toMatchObject({
+    const restarted = new EncryptedCustodyStore(
+      path,
+      new Uint8Array(32).fill(7)
+    );
+    await expect(restarted.all()).rejects.toMatchObject({
       category: 'storage_unavailable',
     });
+  });
+
+  it('does not truncate an unframed record that fails authentication', async () => {
+    const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-store-${crypto.randomUUID()}/store.jsonl`;
+    const key = new Uint8Array(32).fill(7);
+    const store = new EncryptedCustodyStore(path, key);
+    await store.append(base);
+    const line = JSON.parse((await readFile(path, 'utf8')).trim()) as {
+      tag: string;
+    };
+    line.tag = `${line.tag[0] === '0' ? '1' : '0'}${line.tag.slice(1)}`;
+    const corrupted = JSON.stringify(line);
+    await writeFile(path, corrupted);
+
+    const restarted = new EncryptedCustodyStore(path, key);
+    await expect(restarted.all()).rejects.toMatchObject({
+      category: 'storage_unavailable',
+    });
+    await expect(readFile(path, 'utf8')).resolves.toBe(corrupted);
   });
 });

@@ -16,6 +16,7 @@ import { PROFILE_ID } from '../lib/profiles/swap-v1.ts';
 import { EncryptedCustodyStore } from '../lib/store/store.ts';
 import { EncryptedOperatorStore } from '../lib/store/operator-store.ts';
 import { EscrowHttpService, startHttpServer } from '../service/server.ts';
+import { Nip98Authenticator } from '../service/nip98.ts';
 import { CoordinationOperator } from './coordinator.ts';
 
 const config = loadConfig();
@@ -39,10 +40,6 @@ try {
     store: custodyStore,
     signer: config.operatorSigner,
     policy: {
-      feesEnabled: config.feesEnabled,
-      operatorFeeBps: config.operatorFeeBps,
-      operatorMinFeeSats: config.operatorMinFeeSats,
-      refundFeeMode: config.refundFeeMode,
       releaseSafetyMarginSeconds: config.releaseSafetyMarginSeconds,
       returnLnOverage: config.returnLnOverage,
       operatorLnAddress: config.operatorLnAddress,
@@ -78,6 +75,7 @@ try {
   const openApi = await loadOpenApi();
   const service = new EscrowHttpService({
     operator,
+    authenticator: new Nip98Authenticator(operatorStore),
     serviceBaseUrl: config.serviceBaseUrl,
     openApi,
     clock: now,

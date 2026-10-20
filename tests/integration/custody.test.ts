@@ -20,7 +20,14 @@ const operatorSigner = createSigner(OPERATOR.nsec);
 const providerSecret = Buffer.from(CUSTOMER.secretKey).toString('hex');
 let mint: CashuTsMint;
 
-const basePolicy: CustodyPolicy = {
+type TestPolicy = CustodyPolicy & {
+  feesEnabled: boolean;
+  operatorFeeBps: number;
+  operatorMinFeeSats: number;
+  refundFeeMode: RefundFeeMode;
+};
+
+const basePolicy: TestPolicy = {
   feesEnabled: true,
   operatorFeeBps: 100,
   operatorMinFeeSats: 3,
@@ -289,7 +296,7 @@ async function mintLocked(gross: number, locktime: number) {
 async function heldEngine(
   coordinationId: string,
   funding: Awaited<ReturnType<typeof mintLocked>>,
-  policy: CustodyPolicy,
+  policy: TestPolicy,
   now: number,
   payoutType: 'cashu_p2pk' | 'bolt11',
   networkCost = funding.inputFee,
@@ -346,7 +353,7 @@ function tokenInputFee(token: string): number {
 function settlementAmounts(
   gross: number,
   networkCost: number,
-  policy: CustodyPolicy
+  policy: TestPolicy
 ): BoundAmounts {
   const fees = computeFees({
     gross,
@@ -368,7 +375,7 @@ function settlementAmounts(
 function refundAmounts(
   gross: number,
   networkCost: number,
-  policy: CustodyPolicy,
+  policy: TestPolicy,
   refundFeeMode: RefundFeeMode
 ): BoundAmounts {
   const fees = computeFees({

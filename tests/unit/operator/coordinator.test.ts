@@ -72,6 +72,13 @@ describe('CoordinationOperator', () => {
     expect(lastAction(setup.pool, 'core/secure')).toBeUndefined();
   });
 
+  it("ignores a root that reuses another caller's quote", async () => {
+    const setup = await createSetup({ quoteCaller: STRANGER.pubkey });
+    await expect(
+      setup.operator.status(setup.root.id, CUSTOMER.pubkey)
+    ).rejects.toMatchObject({ category: 'coordination_not_found' });
+  });
+
   it('rejects an authenticated participant with the wrong operation role', async () => {
     const setup = await createSetup();
 
@@ -700,6 +707,46 @@ describe('CoordinationOperator', () => {
     expect(lastAction(setup.pool, 'core/refund')).toBeDefined();
   });
 
+  it('rejects a backdated fiat-sent action first observed after its deadline', async () => {
+    const setup = await createSetup();
+    await fund(setup);
+    const secure = lastAction(setup.pool, 'core/secure')!;
+    const lateFiatSent = actionEvent(setup, {
+      signer: setup.agentSigner,
+      action: ACTION_FIAT_SENT,
+      prev: secure.id,
+      at: TIMES.fiatPayBy - 1,
+      data: { payment_reference: 'backdated-payment' },
+    });
+
+    setup.clock.now = TIMES.fiatPayBy + 1;
+    await setup.relay.publish(lateFiatSent);
+    await setup.operator.tick(TIMES.fiatPayBy + 1);
+    await publishAction(setup, {
+      signer: setup.customerSigner,
+      action: 'core/authorize_refund',
+      prev: secure.id,
+      at: TIMES.fiatPayBy + 2,
+    });
+
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'refunded',
+    });
+    expect(lastAction(setup.pool, 'core/refund')).toBeDefined();
+  });
+
+  it('does not resurrect an expired quote with backdated root and accept events', async () => {
+    const setup = await createSetup({ startAt: T0 + 1_001 });
+
+    await expect(
+      setup.operator.fundingInstructions(
+        setup.root.id,
+        CUSTOMER.pubkey,
+        T0 + 1_001
+      )
+    ).rejects.toMatchObject({ category: 'coordination_not_found' });
+  });
+
   it('persists one funding locktime and enforces it at submission', async () => {
     const setup = await createSetup({ minLocktimeSeconds: 1_000 });
     const first = await setup.operator.fundingInstructions(
@@ -1007,11 +1054,14 @@ async function createSetup(
     feesEnabled?: boolean;
     minLocktimeSeconds?: number;
     rootTermsDigest?: string;
+    quoteCaller?: string;
+    startAt?: number;
   } = {}
 ): Promise<Setup> {
   const direction = input.direction ?? 'btc_to_fiat';
   const payoutType = input.payoutType ?? 'cashu_p2pk';
   const feesEnabled = input.feesEnabled ?? true;
+  const quoteCaller = input.quoteCaller ?? CUSTOMER.pubkey;
   const operatorSigner = createSigner(OPERATOR.nsec);
   const customerSigner = createSigner(CUSTOMER.nsec);
   const agentSigner = createSigner(AGENT.nsec);
@@ -1026,16 +1076,12 @@ async function createSetup(
     store: custodyStore,
     signer: operatorSigner,
     policy: {
-      feesEnabled,
-      operatorFeeBps: 100,
-      operatorMinFeeSats: 3,
-      refundFeeMode: 'network_only',
       releaseSafetyMarginSeconds: 50,
       returnLnOverage: true,
       operatorLnAddress: 'operator@example.com',
     },
   });
-  const clock = { now: T0 + 25 };
+  const clock = { now: input.startAt ?? T0 + 25 };
   const base: SetupBase = {
     relay,
     pool,
@@ -1087,7 +1133,7 @@ async function createSetup(
       payout_type: payoutType,
     },
     T0,
-    OPERATOR.pubkey
+    quoteCaller
   );
   const descriptor = buildDescriptorEvent({
     signer: operatorSigner,
@@ -1127,7 +1173,7 @@ async function createSetup(
         },
         quote: {
           algorithm: 'sha256-bytes@1',
-          digest: await operatorStore.putQuote(quote, OPERATOR.pubkey, T0),
+          digest: await operatorStore.putQuote(quote, quoteCaller, T0),
         },
       },
     }),
@@ -1144,7 +1190,7 @@ async function createSetup(
   pool.seed(descriptor);
   pool.seed(root);
   pool.seed(accept);
-  await operator.start(T0 + 25);
+  await operator.start(clock.now);
   return { ...base, operator, root, quote };
 }
 

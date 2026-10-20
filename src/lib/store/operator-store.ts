@@ -95,6 +95,24 @@ const ForkEntry = z
   })
   .strict();
 
+const EventObservationEntry = z
+  .object({
+    revision: z.number().int().positive(),
+    type: z.literal('event_observation'),
+    eventId: HexEventId,
+    observedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const Nip98ReplayEntry = z
+  .object({
+    revision: z.number().int().positive(),
+    type: z.literal('nip98_replay'),
+    eventId: HexEventId,
+    expiresAt: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const StoreEntry = z.discriminatedUnion('type', [
   QuoteEntry,
   QuoteBindingEntry,
@@ -102,6 +120,8 @@ const StoreEntry = z.discriminatedUnion('type', [
   FundingInstructionEntry,
   OutboxEntry,
   ForkEntry,
+  EventObservationEntry,
+  Nip98ReplayEntry,
 ]);
 
 const JournalLine = z
@@ -133,8 +153,11 @@ export interface OperatorStore {
     caller: string,
     storedAt: number
   ): Promise<string>;
-  getQuote(commitmentDigest: string): Promise<SignedQuoteValue | undefined>;
-  bindQuote(commitmentDigest: string, coordinationId: string): Promise<void>;
+  getQuote(
+    commitmentDigest: string,
+    caller: string
+  ): Promise<SignedQuoteValue | undefined>;
+  bindQuote(commitmentDigest: string, coordinationId: string): Promise<boolean>;
   putPayout(coordinationId: string, payout: PayoutTarget): Promise<void>;
   getPayout(coordinationId: string): Promise<PayoutTarget | undefined>;
   getOrCreateFundingLocktime(
@@ -145,6 +168,12 @@ export interface OperatorStore {
   markOutboxPublished(key: string): Promise<void>;
   putFork(fork: PersistedFork): Promise<void>;
   getFork(coordinationId: string): Promise<PersistedFork | undefined>;
+  observeEvent(eventId: string, observedAt: number): Promise<number>;
+  useNip98Event(
+    eventId: string,
+    expiresAt: number,
+    now: number
+  ): Promise<boolean>;
 }
 
 type StoreState = {
@@ -154,6 +183,8 @@ type StoreState = {
   fundingLocktimes: Map<string, number>;
   outbox: Map<string, OutboxItem>;
   forks: Map<string, PersistedFork>;
+  eventObservations: Map<string, number>;
+  nip98Replay: Map<string, number>;
 };
 
 type StoredQuote = {
@@ -172,6 +203,7 @@ const UNBOUND_QUOTE_RETENTION_SECONDS = 24 * 60 * 60;
 export class EncryptedOperatorStore implements OperatorStore {
   readonly #path: string;
   readonly #key: Uint8Array;
+  #cachedState: StoreState | undefined;
   #tail: Promise<void> = Promise.resolve();
 
   constructor(path: string, key: Uint8Array) {
@@ -183,7 +215,7 @@ export class EncryptedOperatorStore implements OperatorStore {
   }
 
   async initialize(): Promise<void> {
-    await this.#exclusive(async () => {
+    return this.#exclusive(async () => {
       await this.#read();
     });
   }
@@ -205,15 +237,18 @@ export class EncryptedOperatorStore implements OperatorStore {
     }
     const key = quoteCommitment(parsed.data).digest;
     await this.#exclusive(async () => {
-      const state = await this.#read();
+      let state = await this.#read();
       const existing = state.quotes.get(key);
       if (existing !== undefined) {
-        if (JSON.stringify(existing.quote) !== JSON.stringify(parsed.data)) {
+        if (
+          existing.caller !== parsedCaller.data ||
+          JSON.stringify(existing.quote) !== JSON.stringify(parsed.data)
+        ) {
           conflict('quote commitment already has different bytes');
         }
         return;
       }
-      await this.#pruneExpiredQuotes(state, storedAt);
+      state = await this.#pruneExpiredQuotes(state, storedAt);
       const recent = [...state.quotes.values()].filter(
         (stored) =>
           stored.storedAt !== undefined &&
@@ -238,28 +273,40 @@ export class EncryptedOperatorStore implements OperatorStore {
     return key;
   }
 
-  async getQuote(key: string): Promise<SignedQuoteValue | undefined> {
-    return this.#exclusive(
-      async () => (await this.#read()).quotes.get(key)?.quote
-    );
+  async getQuote(
+    key: string,
+    caller: string
+  ): Promise<SignedQuoteValue | undefined> {
+    const parsedCaller = HexPubkey.safeParse(caller);
+    if (!parsedCaller.success) invalid('quote caller is invalid');
+    return this.#exclusive(async () => {
+      const stored = (await this.#read()).quotes.get(key);
+      return stored?.caller === parsedCaller.data
+        ? structuredClone(stored.quote)
+        : undefined;
+    });
   }
 
-  async bindQuote(key: string, coordinationId: string): Promise<void> {
+  async bindQuote(key: string, coordinationId: string): Promise<boolean> {
     const parsedKey = QuoteBindingEntry.shape.key.safeParse(key);
     const parsedId = HexEventId.safeParse(coordinationId);
     if (!parsedKey.success || !parsedId.success)
       invalid('quote binding is invalid');
-    await this.#exclusive(async () => {
+    return this.#exclusive(async () => {
       const state = await this.#read();
       const quote = state.quotes.get(parsedKey.data);
       if (quote === undefined) conflict('quote is unavailable', parsedId.data);
-      if (quote.coordinationIds.has(parsedId.data)) return;
+      if (quote.coordinationIds.has(parsedId.data)) return true;
+      if (quote.coordinationIds.size > 0) {
+        return false;
+      }
       await this.#append({
         revision: state.revision + 1,
         type: 'quote_binding',
         key: parsedKey.data,
         coordinationId: parsedId.data,
       });
+      return true;
     });
   }
 
@@ -289,9 +336,10 @@ export class EncryptedOperatorStore implements OperatorStore {
   }
 
   async getPayout(coordinationId: string): Promise<PayoutTarget | undefined> {
-    return this.#exclusive(async () =>
-      (await this.#read()).payouts.get(coordinationId)
-    );
+    return this.#exclusive(async () => {
+      const payout = (await this.#read()).payouts.get(coordinationId);
+      return payout === undefined ? undefined : structuredClone(payout);
+    });
   }
 
   async getOrCreateFundingLocktime(
@@ -329,14 +377,14 @@ export class EncryptedOperatorStore implements OperatorStore {
     return this.#exclusive(async () => {
       const state = await this.#read();
       const existing = state.outbox.get(parsed.data);
-      if (existing !== undefined) return existing;
+      if (existing !== undefined) return structuredClone(existing);
       const item = { key: parsed.data, event: signed.data, published: false };
       await this.#append({
         revision: state.revision + 1,
         type: 'outbox',
         ...item,
       });
-      return item;
+      return structuredClone(item);
     });
   }
 
@@ -394,17 +442,82 @@ export class EncryptedOperatorStore implements OperatorStore {
   }
 
   async getFork(coordinationId: string): Promise<PersistedFork | undefined> {
-    return this.#exclusive(async () =>
-      (await this.#read()).forks.get(coordinationId)
-    );
+    return this.#exclusive(async () => {
+      const fork = (await this.#read()).forks.get(coordinationId);
+      return fork === undefined ? undefined : structuredClone(fork);
+    });
+  }
+
+  async observeEvent(eventId: string, observedAt: number): Promise<number> {
+    const id = HexEventId.safeParse(eventId);
+    if (!id.success || !Number.isSafeInteger(observedAt) || observedAt < 0) {
+      invalid('event observation is invalid');
+    }
+    return this.#exclusive(async () => {
+      const state = await this.#read();
+      const existing = state.eventObservations.get(id.data);
+      if (existing !== undefined) return existing;
+      await this.#append({
+        revision: state.revision + 1,
+        type: 'event_observation',
+        eventId: id.data,
+        observedAt,
+      });
+      return observedAt;
+    });
+  }
+
+  async useNip98Event(
+    eventId: string,
+    expiresAt: number,
+    now: number
+  ): Promise<boolean> {
+    const id = HexEventId.safeParse(eventId);
+    if (
+      !id.success ||
+      !Number.isSafeInteger(expiresAt) ||
+      expiresAt < 0 ||
+      !Number.isSafeInteger(now) ||
+      now < 0
+    ) {
+      invalid('NIP-98 replay metadata is invalid');
+    }
+    return this.#exclusive(async () => {
+      const state = await this.#read();
+      const next = cloneState(state);
+      let pruned = false;
+      for (const [usedId, expiry] of next.nip98Replay) {
+        if (expiry < now) {
+          next.nip98Replay.delete(usedId);
+          pruned = true;
+        }
+      }
+      if (next.nip98Replay.has(id.data)) return false;
+      if (pruned) {
+        next.nip98Replay.set(id.data, expiresAt);
+        await this.#rewrite(next);
+      } else {
+        await this.#append({
+          revision: state.revision + 1,
+          type: 'nip98_replay',
+          eventId: id.data,
+          expiresAt,
+        });
+      }
+      return true;
+    });
   }
 
   async #read(): Promise<StoreState> {
+    if (this.#cachedState !== undefined) return this.#cachedState;
     let contents: string;
     try {
       contents = await readFile(this.#path, 'utf8');
     } catch (error) {
-      if (isMissingFile(error)) return emptyState();
+      if (isMissingFile(error)) {
+        this.#cachedState = emptyState();
+        return this.#cachedState;
+      }
       throw unavailable('operator store could not be read');
     }
 
@@ -415,20 +528,9 @@ export class EncryptedOperatorStore implements OperatorStore {
     try {
       for (const [index, rawLine] of lines.entries()) {
         if (rawLine.length === 0) continue;
-        let entry: z.infer<typeof StoreEntry>;
+        let parsedLine: unknown;
         try {
-          const line = JournalLine.parse(JSON.parse(rawLine));
-          const decipher = createDecipheriv(
-            'aes-256-gcm',
-            this.#key,
-            Buffer.from(line.nonce, 'hex')
-          );
-          decipher.setAuthTag(Buffer.from(line.tag, 'hex'));
-          const plaintext = Buffer.concat([
-            decipher.update(Buffer.from(line.ciphertext, 'base64')),
-            decipher.final(),
-          ]).toString('utf8');
-          entry = StoreEntry.parse(JSON.parse(plaintext));
+          parsedLine = JSON.parse(rawLine);
         } catch (error) {
           if (finalLineIsUnframed && index === lines.length - 1) {
             await repairUnframedTail(this.#path, contents, rawLine);
@@ -437,44 +539,18 @@ export class EncryptedOperatorStore implements OperatorStore {
           }
           throw error;
         }
-        if (entry.revision !== state.revision + 1) throw new Error();
-        state.revision = entry.revision;
-        if (entry.type === 'quote') {
-          state.quotes.set(entry.key, {
-            quote: entry.quote,
-            ...(entry.caller === undefined ? {} : { caller: entry.caller }),
-            ...(entry.storedAt === undefined
-              ? {}
-              : { storedAt: entry.storedAt }),
-            coordinationIds: new Set(),
-          });
-        }
-        if (entry.type === 'quote_binding') {
-          const quote = state.quotes.get(entry.key);
-          if (quote === undefined) throw new Error();
-          quote.coordinationIds.add(entry.coordinationId);
-        }
-        if (entry.type === 'payout') {
-          state.payouts.set(entry.coordinationId, entry.payout);
-        }
-        if (entry.type === 'funding_instruction') {
-          state.fundingLocktimes.set(entry.coordinationId, entry.locktime);
-        }
-        if (entry.type === 'outbox') {
-          state.outbox.set(entry.key, {
-            key: entry.key,
-            event: entry.event,
-            published: entry.published,
-          });
-        }
-        if (entry.type === 'fork') {
-          state.forks.set(entry.coordinationId, {
-            coordinationId: entry.coordinationId,
-            predecessor: entry.predecessor,
-            branches: entry.branches,
-            actions: entry.actions,
-          });
-        }
+        const line = JournalLine.parse(parsedLine);
+        const decipher = createDecipheriv(
+          'aes-256-gcm',
+          this.#key,
+          Buffer.from(line.nonce, 'hex')
+        );
+        decipher.setAuthTag(Buffer.from(line.tag, 'hex'));
+        const plaintext = Buffer.concat([
+          decipher.update(Buffer.from(line.ciphertext, 'base64')),
+          decipher.final(),
+        ]).toString('utf8');
+        applyEntry(state, StoreEntry.parse(JSON.parse(plaintext)));
       }
       if (finalLineIsUnframed && !discardedTail && lines.at(-1)?.length !== 0) {
         await frameValidTail(this.#path);
@@ -482,21 +558,30 @@ export class EncryptedOperatorStore implements OperatorStore {
     } catch {
       throw unavailable('operator store is corrupt or uses the wrong key');
     }
+    this.#cachedState = state;
     return state;
   }
 
-  async #pruneExpiredQuotes(state: StoreState, now: number): Promise<void> {
+  async #pruneExpiredQuotes(
+    state: StoreState,
+    now: number
+  ): Promise<StoreState> {
+    const next = cloneState(state);
     let changed = false;
-    for (const [key, stored] of state.quotes) {
+    for (const [key, stored] of next.quotes) {
       if (
         stored.coordinationIds.size === 0 &&
         stored.quote.quote.expires_at + UNBOUND_QUOTE_RETENTION_SECONDS < now
       ) {
-        state.quotes.delete(key);
+        next.quotes.delete(key);
         changed = true;
       }
     }
-    if (changed) await this.#rewrite(state);
+    if (changed) {
+      await this.#rewrite(next);
+      return next;
+    }
+    return state;
   }
 
   async #rewrite(state: StoreState): Promise<void> {
@@ -542,6 +627,12 @@ export class EncryptedOperatorStore implements OperatorStore {
         actions: [...fork.actions],
       });
     }
+    for (const [eventId, observedAt] of state.eventObservations) {
+      add({ type: 'event_observation', eventId, observedAt });
+    }
+    for (const [eventId, expiresAt] of state.nip98Replay) {
+      add({ type: 'nip98_replay', eventId, expiresAt });
+    }
 
     const temporaryPath = `${this.#path}.${randomBytes(8).toString('hex')}.tmp`;
     try {
@@ -557,6 +648,7 @@ export class EncryptedOperatorStore implements OperatorStore {
       }
       await rename(temporaryPath, this.#path);
       state.revision = entries.length;
+      this.#cachedState = state;
     } catch {
       await rm(temporaryPath, { force: true }).catch(() => undefined);
       throw unavailable('operator store could not be compacted');
@@ -578,6 +670,10 @@ export class EncryptedOperatorStore implements OperatorStore {
     } catch {
       throw unavailable('operator store could not be persisted');
     }
+    if (this.#cachedState === undefined) {
+      throw unavailable('operator store was not initialized');
+    }
+    applyEntry(this.#cachedState, entry);
   }
 
   #encode(entry: z.infer<typeof StoreEntry>): string {
@@ -607,6 +703,57 @@ export class EncryptedOperatorStore implements OperatorStore {
     } finally {
       release();
     }
+  }
+}
+
+function applyEntry(
+  state: StoreState,
+  entry: z.infer<typeof StoreEntry>
+): void {
+  if (entry.revision !== state.revision + 1) throw new Error();
+  state.revision = entry.revision;
+  if (entry.type === 'quote') {
+    state.quotes.set(entry.key, {
+      quote: entry.quote,
+      ...(entry.caller === undefined ? {} : { caller: entry.caller }),
+      ...(entry.storedAt === undefined ? {} : { storedAt: entry.storedAt }),
+      coordinationIds: new Set(),
+    });
+  }
+  if (entry.type === 'quote_binding') {
+    const quote = state.quotes.get(entry.key);
+    if (quote === undefined) throw new Error();
+    quote.coordinationIds.add(entry.coordinationId);
+  }
+  if (entry.type === 'payout') {
+    state.payouts.set(entry.coordinationId, entry.payout);
+  }
+  if (entry.type === 'funding_instruction') {
+    state.fundingLocktimes.set(entry.coordinationId, entry.locktime);
+  }
+  if (entry.type === 'outbox') {
+    state.outbox.set(entry.key, {
+      key: entry.key,
+      event: entry.event,
+      published: entry.published,
+    });
+  }
+  if (entry.type === 'fork') {
+    state.forks.set(entry.coordinationId, {
+      coordinationId: entry.coordinationId,
+      predecessor: entry.predecessor,
+      branches: entry.branches,
+      actions: entry.actions,
+    });
+  }
+  if (
+    entry.type === 'event_observation' &&
+    !state.eventObservations.has(entry.eventId)
+  ) {
+    state.eventObservations.set(entry.eventId, entry.observedAt);
+  }
+  if (entry.type === 'nip98_replay') {
+    state.nip98Replay.set(entry.eventId, entry.expiresAt);
   }
 }
 
@@ -643,6 +790,26 @@ function emptyState(): StoreState {
     fundingLocktimes: new Map(),
     outbox: new Map(),
     forks: new Map(),
+    eventObservations: new Map(),
+    nip98Replay: new Map(),
+  };
+}
+
+function cloneState(state: StoreState): StoreState {
+  return {
+    revision: state.revision,
+    quotes: new Map(
+      [...state.quotes].map(([key, stored]) => [
+        key,
+        { ...stored, coordinationIds: new Set(stored.coordinationIds) },
+      ])
+    ),
+    payouts: new Map(state.payouts),
+    fundingLocktimes: new Map(state.fundingLocktimes),
+    outbox: new Map(state.outbox),
+    forks: new Map(state.forks),
+    eventObservations: new Map(state.eventObservations),
+    nip98Replay: new Map(state.nip98Replay),
   };
 }
 

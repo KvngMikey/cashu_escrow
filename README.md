@@ -153,6 +153,12 @@ and privately notifies the participants of expiry, but withholds the original
 token from both NIP-59 delivery and the refund-pickup endpoint. Recovery material
 becomes available only after the freeze clears through a valid chain path.
 
+Nostr `created_at` is signer-controlled, so the operator durably records when it
+first sees each coordination event. Custody deadlines use the later of that
+observation and the signed timestamp. Pure protocol replay still uses
+`created_at`; independent observers can therefore disagree about a backdated
+event until Pontmore defines shared timestamp or relay evidence for deadlines.
+
 ## References
 
 - [Pontmore PIP-00, PIP-01, PIP-02 and swap profile](https://github.com/pontmore/protocol)

@@ -4,7 +4,10 @@ import type { NostrEvent } from 'nostr-tools/pure';
 
 import { CustodyEngine } from '../../../src/lib/cashu/custody.ts';
 import type { InspectedToken } from '../../../src/lib/cashu/mint.ts';
-import type { SignedQuote } from '../../../src/lib/cashu/quotes.ts';
+import {
+  quoteCommitment,
+  type SignedQuote,
+} from '../../../src/lib/cashu/quotes.ts';
 import {
   commitBytes,
   ActionContent,
@@ -70,6 +73,13 @@ describe('CoordinationOperator', () => {
       setup.operator.status(setup.root.id, CUSTOMER.pubkey)
     ).rejects.toMatchObject({ category: 'coordination_not_found' });
     expect(lastAction(setup.pool, 'core/secure')).toBeUndefined();
+  });
+
+  it("ignores a root that reuses another caller's quote", async () => {
+    const setup = await createSetup({ quoteCaller: STRANGER.pubkey });
+    await expect(
+      setup.operator.status(setup.root.id, CUSTOMER.pubkey)
+    ).rejects.toMatchObject({ category: 'coordination_not_found' });
   });
 
   it('rejects an authenticated participant with the wrong operation role', async () => {
@@ -700,6 +710,91 @@ describe('CoordinationOperator', () => {
     expect(lastAction(setup.pool, 'core/refund')).toBeDefined();
   });
 
+  it('rejects a backdated fiat-sent action first observed after its deadline', async () => {
+    const setup = await createSetup();
+    await fund(setup);
+    const secure = lastAction(setup.pool, 'core/secure')!;
+    const lateFiatSent = actionEvent(setup, {
+      signer: setup.agentSigner,
+      action: ACTION_FIAT_SENT,
+      prev: secure.id,
+      at: TIMES.fiatPayBy - 1,
+      data: { payment_reference: 'backdated-payment' },
+    });
+
+    setup.clock.now = TIMES.fiatPayBy + 1;
+    await setup.relay.publish(lateFiatSent);
+    await setup.operator.tick(TIMES.fiatPayBy + 1);
+    await publishAction(setup, {
+      signer: setup.customerSigner,
+      action: 'core/authorize_refund',
+      prev: secure.id,
+      at: TIMES.fiatPayBy + 2,
+    });
+
+    expect(await setup.custodyStore.get(setup.root.id)).toMatchObject({
+      status: 'refunded',
+    });
+    expect(lastAction(setup.pool, 'core/refund')).toBeDefined();
+  });
+
+  it('does not resurrect an expired quote with backdated root and accept events', async () => {
+    const setup = await createSetup({ startAt: T0 + 1_001 });
+
+    await expect(
+      setup.operator.fundingInstructions(
+        setup.root.id,
+        CUSTOMER.pubkey,
+        T0 + 1_001
+      )
+    ).rejects.toMatchObject({ category: 'coordination_not_found' });
+  });
+
+  it('uses the receipt time captured after a delayed root query', async () => {
+    const setup = await createSetup({
+      advanceClockOnRootQueryTo: T0 + 1_001,
+      replayOnSubscribe: false,
+    });
+
+    await expect(
+      setup.operator.fundingInstructions(
+        setup.root.id,
+        CUSTOMER.pubkey,
+        T0 + 1_001
+      )
+    ).rejects.toMatchObject({ category: 'coordination_not_found' });
+  });
+
+  it('uses the receipt time captured after a delayed action query', async () => {
+    const setup = await createSetup({
+      advanceClockOnActionQueryTo: TIMES.expires + 1,
+      replayOnSubscribe: false,
+    });
+
+    await expect(
+      setup.operator.fundingInstructions(
+        setup.root.id,
+        CUSTOMER.pubkey,
+        TIMES.expires + 1
+      )
+    ).rejects.toMatchObject({ category: 'custody_conflict' });
+  });
+
+  it('preserves the first-seen time when a relay replays a known action', async () => {
+    const setup = await createSetup();
+    const accept = actions(setup.pool, 'core/accept')[0]!;
+    setup.clock.now = TIMES.expires + 1;
+    setup.pool.seed(accept);
+
+    await expect(
+      setup.operator.fundingInstructions(
+        setup.root.id,
+        CUSTOMER.pubkey,
+        T0 + 29
+      )
+    ).resolves.toMatchObject({ coordination_id: setup.root.id });
+  });
+
   it('persists one funding locktime and enforces it at submission', async () => {
     const setup = await createSetup({ minLocktimeSeconds: 1_000 });
     const first = await setup.operator.fundingInstructions(
@@ -891,6 +986,32 @@ describe('CoordinationOperator', () => {
     expect(lastAction(setup.pool, 'core/settle')).toBeDefined();
   });
 
+  it('migrates established pre-observation coordinations after quote expiry', async () => {
+    const setup = await createSetup();
+    await fund(setup);
+    setup.operator.stop();
+
+    const quoteKey = quoteCommitment(setup.quote).digest;
+    setup.operatorStore.eventObservations.clear();
+    setup.operatorStore.eventObservationMigrations.clear();
+    setup.operatorStore.quoteBindingModes.set(quoteKey, 'legacy');
+    setup.clock.now = T0 + 1_500;
+
+    const restarted = createOperator(setup);
+    await restarted.start(setup.clock.now);
+    setup.operator = restarted;
+
+    await expect(
+      restarted.status(setup.root.id, CUSTOMER.pubkey)
+    ).resolves.toMatchObject({ public_state: 'secured' });
+    expect(setup.operatorStore.eventObservations.get(setup.root.id)).toBe(
+      setup.root.created_at
+    );
+    expect(
+      setup.operatorStore.eventObservationMigrations.has(setup.root.id)
+    ).toBe(true);
+  });
+
   it('resumes private delivery after custody completed but relay publication failed', async () => {
     const setup = await createSetup();
     await fund(setup);
@@ -1007,16 +1128,35 @@ async function createSetup(
     feesEnabled?: boolean;
     minLocktimeSeconds?: number;
     rootTermsDigest?: string;
+    quoteCaller?: string;
+    startAt?: number;
+    advanceClockOnRootQueryTo?: number;
+    advanceClockOnActionQueryTo?: number;
+    replayOnSubscribe?: boolean;
   } = {}
 ): Promise<Setup> {
   const direction = input.direction ?? 'btc_to_fiat';
   const payoutType = input.payoutType ?? 'cashu_p2pk';
   const feesEnabled = input.feesEnabled ?? true;
+  const quoteCaller = input.quoteCaller ?? CUSTOMER.pubkey;
   const operatorSigner = createSigner(OPERATOR.nsec);
   const customerSigner = createSigner(CUSTOMER.nsec);
   const agentSigner = createSigner(AGENT.nsec);
   const resolverSigner = createSigner(STRANGER.nsec);
-  const pool = createFakeRelayPool();
+  const clock = { now: input.startAt ?? T0 + 25 };
+  const pool = createFakeRelayPool({
+    ...(input.replayOnSubscribe === undefined
+      ? {}
+      : { replayOnSubscribe: input.replayOnSubscribe }),
+    beforeQuery(filter) {
+      if (filter.kinds?.includes(KIND_COORDINATION_ROOT)) {
+        clock.now = input.advanceClockOnRootQueryTo ?? clock.now;
+      }
+      if (filter.kinds?.includes(KIND_COORDINATION_ACTION)) {
+        clock.now = input.advanceClockOnActionQueryTo ?? clock.now;
+      }
+    },
+  });
   const relay = createRelayClient(['wss://relay.test'], { pool });
   const custodyStore = new MemoryCustodyStore();
   const operatorStore = new MemoryOperatorStore();
@@ -1026,16 +1166,11 @@ async function createSetup(
     store: custodyStore,
     signer: operatorSigner,
     policy: {
-      feesEnabled,
-      operatorFeeBps: 100,
-      operatorMinFeeSats: 3,
-      refundFeeMode: 'network_only',
       releaseSafetyMarginSeconds: 50,
       returnLnOverage: true,
       operatorLnAddress: 'operator@example.com',
     },
   });
-  const clock = { now: T0 + 25 };
   const base: SetupBase = {
     relay,
     pool,
@@ -1087,7 +1222,7 @@ async function createSetup(
       payout_type: payoutType,
     },
     T0,
-    OPERATOR.pubkey
+    quoteCaller
   );
   const descriptor = buildDescriptorEvent({
     signer: operatorSigner,
@@ -1127,7 +1262,7 @@ async function createSetup(
         },
         quote: {
           algorithm: 'sha256-bytes@1',
-          digest: await operatorStore.putQuote(quote, OPERATOR.pubkey, T0),
+          digest: await operatorStore.putQuote(quote, quoteCaller, T0),
         },
       },
     }),
@@ -1144,7 +1279,7 @@ async function createSetup(
   pool.seed(descriptor);
   pool.seed(root);
   pool.seed(accept);
-  await operator.start(T0 + 25);
+  await operator.start(clock.now);
   return { ...base, operator, root, quote };
 }
 

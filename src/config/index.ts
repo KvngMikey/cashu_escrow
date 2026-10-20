@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { resolve } from 'node:path';
 
 import { EscrowError } from '../lib/errors.ts';
-import { HttpUrl, HttpsUrl, MAX_SATS, parseUrl } from '../lib/primitives.ts';
+import {
+  HttpUrl,
+  HttpsUrl,
+  MAX_SATS,
+  isLoopbackHost,
+  parseUrl,
+} from '../lib/primitives.ts';
 import { createSigner, type EventSigner } from '../lib/pontmore/signer.ts';
 
 const BooleanString = z
@@ -23,8 +29,11 @@ const RelayList = z
     z
       .array(
         z.string().refine((value) => {
-          const protocol = parseUrl(value)?.protocol;
-          return protocol === 'wss:' || protocol === 'ws:';
+          const url = parseUrl(value);
+          return (
+            url?.protocol === 'wss:' ||
+            (url?.protocol === 'ws:' && isLoopbackHost(url.hostname))
+          );
         }, 'expected a ws(s) relay URL')
       )
       .min(1)

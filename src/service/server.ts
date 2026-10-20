@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 
 import { EscrowError, isEscrowError } from '../lib/errors.ts';
 import type { CoordinationOperator } from '../operator/coordinator.ts';
-import { Nip98Authenticator } from './nip98.ts';
+import type { Nip98Authenticator } from './nip98.ts';
 import {
   CoordinationId,
   FundingSubmissionBody,
@@ -46,11 +46,11 @@ export class EscrowHttpService {
     operator: ServiceOperator;
     serviceBaseUrl: string;
     openApi: unknown;
-    authenticator?: Nip98Authenticator;
+    authenticator: Nip98Authenticator;
     clock?: () => number;
   }) {
     this.#operator = input.operator;
-    this.#authenticator = input.authenticator ?? new Nip98Authenticator();
+    this.#authenticator = input.authenticator;
     this.#baseUrl = input.serviceBaseUrl.replace(/\/$/, '');
     this.#openApi = input.openApi;
     this.#clock = input.clock ?? (() => Math.floor(Date.now() / 1_000));
@@ -67,7 +67,7 @@ export class EscrowHttpService {
         return json(200, this.#openApi);
       }
       const now = this.#clock();
-      const caller = this.#authenticator.authenticate({
+      const caller = await this.#authenticator.authenticate({
         authorization: request.authorization,
         method,
         url: `${this.#baseUrl}${request.path}`,

@@ -26,7 +26,11 @@ export type FakeRelayPool = RelayPool & {
 };
 
 export function createFakeRelayPool(
-  options: { rejectingRelays?: readonly string[] } = {}
+  options: {
+    rejectingRelays?: readonly string[];
+    beforeQuery?: (filter: Filter) => Promise<void> | void;
+    replayOnSubscribe?: boolean;
+  } = {}
 ): FakeRelayPool {
   const rejecting = new Set(options.rejectingRelays ?? []);
   const stored: NostrEvent[] = [];
@@ -59,7 +63,8 @@ export function createFakeRelayPool(
       });
     },
 
-    querySync(_relays: string[], filter: Filter): Promise<NostrEvent[]> {
+    async querySync(_relays: string[], filter: Filter): Promise<NostrEvent[]> {
+      await options.beforeQuery?.(filter);
       return Promise.resolve(
         stored.filter((event) => matchFilter(filter, event))
       );
@@ -71,8 +76,10 @@ export function createFakeRelayPool(
       params: SubscribeManyParams
     ): SubCloser {
       const onevent = params.onevent ?? ((): void => undefined);
-      for (const event of stored) {
-        if (matchFilter(filter, event)) onevent(event);
+      if (options.replayOnSubscribe !== false) {
+        for (const event of stored) {
+          if (matchFilter(filter, event)) onevent(event);
+        }
       }
 
       const listener = { filter, onevent };

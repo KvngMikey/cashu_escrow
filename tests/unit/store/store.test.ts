@@ -1,11 +1,24 @@
-import { appendFile, readFile, stat } from 'node:fs/promises';
+import {
+  appendFile,
+  mkdir,
+  open,
+  readFile,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
+import { dirname } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { CustodyEngine } from '../../../src/lib/cashu/custody.ts';
+import type { InspectedToken } from '../../../src/lib/cashu/mint.ts';
+import { createSigner } from '../../../src/lib/pontmore/signer.ts';
 import {
   EncryptedCustodyStore,
   type CustodyRecord,
 } from '../../../src/lib/store/store.ts';
+import { FakeCustodyMint } from '../support/fake-custody.ts';
+import { CUSTOMER, OPERATOR } from '../support/keys.ts';
 
 const base: CustodyRecord = {
   coordinationId: 'swap-1',
@@ -102,8 +115,125 @@ describe('EncryptedCustodyStore', () => {
     await store.append(base);
     await appendFile(path, '{"invalid":true}\n');
 
-    await expect(store.all()).rejects.toMatchObject({
+    const restarted = new EncryptedCustodyStore(
+      path,
+      new Uint8Array(32).fill(7)
+    );
+    await expect(restarted.all()).rejects.toMatchObject({
       category: 'storage_unavailable',
     });
   });
+
+  it('does not truncate an unframed record that fails authentication', async () => {
+    const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-store-${crypto.randomUUID()}/store.jsonl`;
+    const key = new Uint8Array(32).fill(7);
+    const store = new EncryptedCustodyStore(path, key);
+    await store.append(base);
+    const line = JSON.parse((await readFile(path, 'utf8')).trim()) as {
+      tag: string;
+    };
+    line.tag = `${line.tag[0] === '0' ? '1' : '0'}${line.tag.slice(1)}`;
+    const corrupted = JSON.stringify(line);
+    await writeFile(path, corrupted);
+
+    const restarted = new EncryptedCustodyStore(path, key);
+    await expect(restarted.all()).rejects.toMatchObject({
+      category: 'storage_unavailable',
+    });
+    await expect(readFile(path, 'utf8')).resolves.toBe(corrupted);
+  });
+
+  it('fails closed after an uncertain hold and rejects its token after restart', async () => {
+    const path = `${process.env.TMPDIR ?? '/tmp'}/cashu-store-${crypto.randomUUID()}/store.jsonl`;
+    const key = new Uint8Array(32).fill(7);
+    const store = new EncryptedCustodyStore(path, key);
+    const mint = new FakeCustodyMint(lockedToken());
+    const engine = custodyEngine(store, mint);
+    await mkdir(dirname(path), { recursive: true });
+    const probe = await open(path, 'a');
+    const fileHandlePrototype = Object.getPrototypeOf(probe) as {
+      sync(): Promise<void>;
+    };
+    await probe.close();
+    const sync = vi
+      .spyOn(fileHandlePrototype, 'sync')
+      .mockRejectedValueOnce(new Error('simulated sync failure'));
+
+    await expect(
+      engine.hold(holdRequest('swap-uncertain'))
+    ).rejects.toMatchObject({ category: 'storage_unavailable' });
+    sync.mockRestore();
+    await expect(engine.hold(holdRequest('swap-retry'))).rejects.toThrow(
+      /restart is required/
+    );
+
+    const restartedStore = new EncryptedCustodyStore(path, key);
+    const restarted = custodyEngine(restartedStore, mint);
+    await expect(
+      restarted.hold(holdRequest('swap-duplicate'))
+    ).rejects.toMatchObject({ category: 'custody_conflict' });
+    await expect(restartedStore.get('swap-uncertain')).resolves.toMatchObject({
+      revision: 1,
+      status: 'held',
+    });
+  });
 });
+
+function lockedToken(): InspectedToken {
+  return {
+    mint: 'http://mint.test',
+    unit: 'sat',
+    amount: 1_000,
+    inputFee: 1,
+    proofs: [
+      {
+        amount: 1_000,
+        secret: [
+          'P2PK',
+          {
+            nonce: 'nonce',
+            data: OPERATOR.pubkey,
+            tags: [
+              ['locktime', '2150'],
+              ['refund', CUSTOMER.pubkey],
+            ],
+          },
+        ],
+        sigFlag: 'SIG_INPUTS',
+        dleqValid: true,
+      },
+    ],
+  };
+}
+
+function custodyEngine(store: EncryptedCustodyStore, mint: FakeCustodyMint) {
+  return new CustodyEngine({
+    mint,
+    store,
+    signer: createSigner(OPERATOR.nsec),
+    policy: {
+      releaseSafetyMarginSeconds: 50,
+      returnLnOverage: true,
+      operatorLnAddress: 'operator@example.com',
+    },
+  });
+}
+
+function holdRequest(coordinationId: string) {
+  return {
+    token: 'cashu-locked',
+    observedAt: 1_000,
+    expectation: {
+      coordinationId,
+      mintUrl: 'http://mint.test',
+      operatorPubkey: OPERATOR.pubkey,
+      providerPubkey: CUSTOMER.pubkey,
+      grossSats: 1_000,
+      networkCostSats: 1,
+      payoutType: 'cashu_p2pk' as const,
+      fiatConfirmBy: 2_000,
+      disputeWindowSeconds: 100,
+      releaseSafetyMarginSeconds: 50,
+    },
+  };
+}

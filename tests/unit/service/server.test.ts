@@ -6,13 +6,17 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EscrowError } from '../../../src/lib/errors.ts';
 import { createSigner } from '../../../src/lib/pontmore/signer.ts';
-import { KIND_HTTP_AUTH } from '../../../src/service/nip98.ts';
+import {
+  KIND_HTTP_AUTH,
+  Nip98Authenticator,
+} from '../../../src/service/nip98.ts';
 import { CoordinationStatus } from '../../../src/service/schemas.ts';
 import {
   EscrowHttpService,
   readRequestBody,
 } from '../../../src/service/server.ts';
 import { OPERATOR } from '../support/keys.ts';
+import { MemoryOperatorStore } from '../support/fake-operator.ts';
 
 const now = 1_800_000_000;
 const baseUrl = 'https://escrow.example.com';
@@ -227,6 +231,7 @@ function setup() {
   };
   const service = new EscrowHttpService({
     operator,
+    authenticator: new Nip98Authenticator(new MemoryOperatorStore()),
     serviceBaseUrl: baseUrl,
     openApi: { openapi: '3.1.0' },
     clock: () => now,

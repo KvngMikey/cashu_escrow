@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { EscrowError } from '../lib/errors.ts';
 import { verifySignedEvent } from '../lib/pontmore/signer.ts';
+import type { OperatorStore } from '../lib/store/operator-store.ts';
 
 export const KIND_HTTP_AUTH = 27_235 as const;
 const AUTH_WINDOW_SECONDS = 60;
@@ -32,14 +33,16 @@ export type Nip98Request = {
 
 /** Verifies NIP-98 and rejects reuse of one authorization event. */
 export class Nip98Authenticator {
-  readonly #used = new Map<string, number>();
+  readonly #store: Pick<OperatorStore, 'useNip98Event'>;
 
-  authenticate(request: Nip98Request): string {
-    this.#prune(request.now);
+  constructor(store: Pick<OperatorStore, 'useNip98Event'>) {
+    this.#store = store;
+  }
+
+  async authenticate(request: Nip98Request): Promise<string> {
     const event = decodeAuthorization(request.authorization);
     if (
       Math.abs(event.created_at - request.now) > AUTH_WINDOW_SECONDS ||
-      this.#used.has(event.id) ||
       !verifySignedEvent(event)
     ) {
       unauthorized();
@@ -65,14 +68,13 @@ export class Nip98Authenticator {
       }
     }
 
-    this.#used.set(event.id, event.created_at + AUTH_WINDOW_SECONDS);
+    const unused = await this.#store.useNip98Event(
+      event.id,
+      event.created_at + AUTH_WINDOW_SECONDS,
+      request.now
+    );
+    if (!unused) unauthorized();
     return event.pubkey;
-  }
-
-  #prune(now: number): void {
-    for (const [id, expiresAt] of this.#used) {
-      if (expiresAt < now) this.#used.delete(id);
-    }
   }
 }
 

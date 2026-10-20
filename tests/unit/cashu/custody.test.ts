@@ -15,10 +15,6 @@ import {
 } from '../support/fake-custody.ts';
 
 const policy: CustodyPolicy = {
-  feesEnabled: true,
-  operatorFeeBps: 100,
-  operatorMinFeeSats: 3,
-  refundFeeMode: 'network_only',
   releaseSafetyMarginSeconds: 50,
   returnLnOverage: true,
   operatorLnAddress: 'operator@example.com',
@@ -129,12 +125,19 @@ describe('CustodyEngine', () => {
   });
 
   it('backfills legacy fingerprints before checking another token encoding', async () => {
-    const { engine, store } = setup();
+    const { engine, mint, store, invoiceSource } = setup();
     const held = await hold(engine);
     const { tokenFingerprint: _legacyMissing, ...legacy } = held;
     store.records.set(held.coordinationId, legacy);
+    const restarted = new CustodyEngine({
+      mint,
+      store,
+      signer: createSigner(OPERATOR.nsec),
+      policy,
+      invoiceSource,
+    });
     await expect(
-      engine.hold({
+      restarted.hold({
         token: 'same-proofs-different-encoding',
         observedAt: 1_001,
         expectation: {
@@ -320,8 +323,8 @@ describe('CustodyEngine', () => {
     expect(await store.get('swap-1')).toMatchObject({ status: 'held' });
   });
 
-  it('settles cashu with fees disabled', async () => {
-    const { engine } = setup({ feesEnabled: false });
+  it('settles a quote with no operator fee', async () => {
+    const { engine } = setup();
     await hold(engine);
     await expect(
       engine.settle({
@@ -488,7 +491,7 @@ describe('CustodyEngine', () => {
   });
 
   it('rejects an excessive recipient fee reserve before spending', async () => {
-    const { engine, mint, store } = setup({ feesEnabled: false });
+    const { engine, mint, store } = setup();
     mint.invoiceFeeReserves.set('lnbc-recipient', 2);
     await hold(engine, 'bolt11', 1);
     await expect(
@@ -554,7 +557,7 @@ describe('CustodyEngine', () => {
   });
 
   it('recovers a paid Lightning melt after a crash before append', async () => {
-    const { engine, mint, store } = setup({ feesEnabled: false });
+    const { engine, mint, store } = setup();
     const recovered = {
       paidAmount: 999,
       feePaid: 1,
@@ -584,7 +587,7 @@ describe('CustodyEngine', () => {
       mint,
       store,
       signer: createSigner(OPERATOR.nsec),
-      policy: { ...policy, feesEnabled: false },
+      policy,
     });
     await restarted.reconcile(2_001);
     expect(await store.get('swap-1')).toMatchObject({ status: 'settled' });
@@ -592,7 +595,7 @@ describe('CustodyEngine', () => {
   });
 
   it('keeps a pending Lightning melt unresolved until mint recovery completes', async () => {
-    const { engine, mint, store } = setup({ feesEnabled: false });
+    const { engine, mint, store } = setup();
     mint.meltCompletion = { state: 'pending' };
     await hold(engine, 'bolt11', 1);
     const input = {
@@ -683,7 +686,7 @@ describe('CustodyEngine', () => {
   });
 
   it('freezes an impossible post-melt result instead of retrying it', async () => {
-    const { engine, mint, store } = setup({ feesEnabled: false });
+    const { engine, mint, store } = setup();
     mint.meltResult = {
       paidAmount: 997,
       feePaid: 2,
@@ -719,7 +722,7 @@ describe('CustodyEngine', () => {
     ['network_only', 0, 999],
     ['full', 10, 989],
   ] as const)('executes an authorized %s refund', async (mode, fee, payout) => {
-    const { engine } = setup({ refundFeeMode: mode });
+    const { engine } = setup();
     await hold(engine);
     const refunded = await engine.refundAuthorized({
       coordinationId: 'swap-1',

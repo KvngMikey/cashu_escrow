@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.build.json",
     "operator": "node --import tsx src/operator/index.ts",
     "smoke": "node --import tsx scripts/smoke-swap.ts",
+    "smoke:pontswap-v2": "node --import tsx scripts/pontswap-v2-smoke.ts",
     "resolve": "node --import tsx scripts/resolve.ts",
     "publish:agent": "node --import tsx scripts/publish-agent.ts",
     "publish:descriptor": "node --import tsx scripts/publish-descriptor.ts",

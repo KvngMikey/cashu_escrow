@@ -11,6 +11,7 @@ import {
 import { computeFees, type RefundFeeMode } from '../../src/lib/cashu/fees.ts';
 import { CashuTsMint } from '../../src/lib/cashu/mint.ts';
 import { createSigner } from '../../src/lib/pontmore/signer.ts';
+import type { CustodyRecord } from '../../src/lib/store/store.ts';
 import { CUSTOMER, OPERATOR } from '../unit/support/keys.ts';
 import { MemoryCustodyStore } from '../unit/support/fake-custody.ts';
 
@@ -100,6 +101,55 @@ describe('custody against Nutshell FakeWallet', () => {
       );
     }
   );
+
+  it('restores a completed P2PK swap after a crash before the terminal append', async () => {
+    const now = unixNow();
+    const funding = await mintLocked(100, now + 120);
+    const amounts = settlementAmounts(100, funding.inputFee, basePolicy);
+    const store = new CrashAfterMintStore();
+    const { engine } = await heldEngine(
+      'recover-p2pk',
+      funding,
+      basePolicy,
+      now,
+      'cashu_p2pk',
+      funding.inputFee,
+      10,
+      undefined,
+      store
+    );
+
+    await expect(
+      engine.settle({
+        coordinationId: 'recover-p2pk',
+        payout: { type: 'cashu_p2pk', recipientPubkey: CUSTOMER.pubkey },
+        amounts,
+        now,
+      })
+    ).rejects.toThrow(/simulated crash/);
+    expect(await store.get('recover-p2pk')).toMatchObject({
+      status: 'spending',
+    });
+    expect(await mint.states(funding.token)).toEqual(
+      funding.states.map(() => 'spent')
+    );
+
+    const restarted = new CustodyEngine({
+      mint,
+      store,
+      signer: operatorSigner,
+      policy: basePolicy,
+    });
+    await restarted.reconcile(now + 1);
+    const recovered = await store.get('recover-p2pk');
+    expect(recovered).toMatchObject({
+      status: 'settled',
+      payoutSats: amounts.payoutSats,
+    });
+    expect(await receiveP2pk(recovered!.payoutToken!, providerSecret)).toBe(
+      amounts.payoutSats - tokenInputFee(recovered!.payoutToken!)
+    );
+  });
 
   it.each([
     ['network_only', 0],
@@ -204,6 +254,67 @@ describe('custody against Nutshell FakeWallet', () => {
     expect(sumProofs(feeProofs).toNumber()).toBe(3);
   });
 
+  it('recovers a paid Lightning melt after a crash before the terminal append', async () => {
+    const now = unixNow();
+    const funding = await mintLocked(100, now + 120);
+    const policy = { ...basePolicy, feesEnabled: false };
+    const networkCost = funding.inputFee + 1;
+    const amounts = settlementAmounts(100, networkCost, policy);
+    const recipient = new Wallet(INVOICE_MINT_URL, { unit: 'sat' });
+    await recipient.loadMint();
+    const invoiceQuote = await recipient.createMintQuoteBolt11(
+      amounts.payoutSats
+    );
+    const store = new CrashAfterMintStore();
+    const { engine } = await heldEngine(
+      'recover-melt',
+      funding,
+      policy,
+      now,
+      'bolt11',
+      networkCost,
+      10,
+      undefined,
+      store
+    );
+
+    await expect(
+      engine.settle({
+        coordinationId: 'recover-melt',
+        payout: { type: 'bolt11', invoice: invoiceQuote.request },
+        amounts,
+        now,
+      })
+    ).rejects.toThrow(/simulated crash/);
+    expect(await store.get('recover-melt')).toMatchObject({
+      status: 'spending',
+    });
+
+    const restarted = new CustodyEngine({
+      mint,
+      store,
+      signer: operatorSigner,
+      policy,
+    });
+    await restarted.reconcile(now + 1);
+    const recovered = await store.get('recover-melt');
+    expect(recovered).toMatchObject({ status: 'settled' });
+    let overage = 0;
+    if (recovered?.overageToken !== undefined) {
+      const overageWallet = new Wallet(MINT_URL, { unit: 'sat' });
+      await overageWallet.loadMint();
+      overage = sumProofs(
+        overageWallet.decodeToken(recovered.overageToken).proofs
+      ).toNumber();
+    }
+    expect(recovered?.payoutSats).toBe(amounts.payoutSats + overage);
+    const paidProofs = await recipient.mintProofsBolt11(
+      amounts.payoutSats,
+      invoiceQuote
+    );
+    expect(sumProofs(paidProofs).toNumber()).toBe(amounts.payoutSats);
+  });
+
   it('exposes the original token after expiry and records provider self-spend without attribution', async () => {
     const now = unixNow();
     const funding = await mintLocked(100, now + 2);
@@ -303,9 +414,9 @@ async function heldEngine(
   disputeWindowSeconds = 10,
   invoiceSource?: {
     createInvoice(address: string, amountSats: number): Promise<string>;
-  }
+  },
+  store = new MemoryCustodyStore()
 ) {
-  const store = new MemoryCustodyStore();
   const engine = new CustodyEngine({
     mint,
     store,
@@ -333,6 +444,23 @@ async function heldEngine(
     },
   });
   return { engine, store };
+}
+
+class CrashAfterMintStore extends MemoryCustodyStore {
+  #failTerminal = true;
+
+  override append(record: CustodyRecord): Promise<void> {
+    if (
+      this.#failTerminal &&
+      (record.status === 'settled' || record.status === 'refunded')
+    ) {
+      this.#failTerminal = false;
+      return Promise.reject(
+        new Error('simulated crash before terminal append')
+      );
+    }
+    return super.append(record);
+  }
 }
 
 async function receiveP2pk(token: string, privateKey: string): Promise<number> {

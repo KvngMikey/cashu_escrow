@@ -3,7 +3,12 @@ import 'dotenv/config';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { Wallet, getEncodedToken, sumProofs } from '@cashu/cashu-ts';
+import {
+  MintQuoteState,
+  Wallet,
+  getEncodedToken,
+  sumProofs,
+} from '@cashu/cashu-ts';
 import { nsecEncode } from 'nostr-tools/nip19';
 import { generateSecretKey, type NostrEvent } from 'nostr-tools/pure';
 import { z } from 'zod';
@@ -327,7 +332,12 @@ async function mintLockedToken(
   const wallet = new Wallet(instructions.mint_url, { unit: 'sat' });
   await wallet.loadMint();
   const quote = await wallet.createMintQuoteBolt11(instructions.amount_sats);
-  await delay(3_500);
+  await retry(async () => {
+    const current = await wallet.checkMintQuoteBolt11(quote);
+    if (current.state !== MintQuoteState.PAID) {
+      throw new Error('mint quote has not been paid');
+    }
+  }, 'FakeWallet did not pay the funding invoice');
   const proofs = await wallet.ops
     .mintBolt11(instructions.amount_sats, quote)
     .asP2PK({

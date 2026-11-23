@@ -1,0 +1,62 @@
+x-cdk: &cdk
+  image: cashubtc/mintd:0.18.3
+  command:
+    - /bin/sh
+    - -ec
+    - |
+      if ! cdk-mintd --work-dir /data config show >/dev/null 2>&1; then
+        umask 077
+        mkdir -p /data
+        if [ ! -s /data/mint-seed ]; then
+          od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > /data/mint-seed
+        fi
+        cat > /tmp/mint.toml <<EOF
+      [info]
+      url = "http://127.0.0.1:$${MINT_HOST_PORT}"
+      listen_host = "0.0.0.0"
+      listen_port = 8085
+      seed = "file:/data/mint-seed"
+      input_fee_ppk = 100
+
+      [database]
+      engine = "sqlite"
+
+      [payment_backend]
+      backend = "fakewallet"
+      unit = "sat"
+
+      [fake_wallet]
+      fee_percent = 0.0
+      reserve_fee_min = 2
+      min_delay_time = 1
+      max_delay_time = 1
+      EOF
+        cdk-mintd --work-dir /data config init --new-mint --file /tmp/mint.toml
+      fi
+      exec cdk-mintd --work-dir /data
+
+services:
+  relay:
+    image: scsibug/nostr-rs-relay:latest
+    ports:
+      - '127.0.0.1:17000:8080'
+  mint:
+    <<: *cdk
+    environment:
+      MINT_HOST_PORT: '3338'
+    ports:
+      - '127.0.0.1:3338:8085'
+    volumes:
+      - mint-data:/data
+  invoice-mint:
+    <<: *cdk
+    environment:
+      MINT_HOST_PORT: '3339'
+    ports:
+      - '127.0.0.1:3339:8085'
+    volumes:
+      - invoice-mint-data:/data
+
+volumes:
+  mint-data:
+  invoice-mint-data:

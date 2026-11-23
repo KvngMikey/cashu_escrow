@@ -1,6 +1,12 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { Wallet, getEncodedToken, sumProofs } from '@cashu/cashu-ts';
+import {
+  MeltQuoteState,
+  MintQuoteState,
+  Wallet,
+  getEncodedToken,
+  sumProofs,
+} from '@cashu/cashu-ts';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -16,7 +22,8 @@ import { CUSTOMER, OPERATOR } from '../unit/support/keys.ts';
 import { MemoryCustodyStore } from '../unit/support/fake-custody.ts';
 
 const MINT_URL = process.env.TEST_MINT_URL ?? 'http://127.0.0.1:3338';
-const INVOICE_MINT_URL = process.env.TEST_INVOICE_MINT_URL ?? MINT_URL;
+const INVOICE_MINT_URL =
+  process.env.TEST_INVOICE_MINT_URL ?? 'http://127.0.0.1:3339';
 const operatorSigner = createSigner(OPERATOR.nsec);
 const providerSecret = Buffer.from(CUSTOMER.secretKey).toString('hex');
 let mint: CashuTsMint;
@@ -43,7 +50,7 @@ beforeAll(async () => {
   await mint.initialize();
 });
 
-describe('custody against Nutshell FakeWallet', () => {
+describe('custody against CDK FakeWallet', () => {
   it('rejects otherwise-unspent funding when its DLEQ data is stripped', async () => {
     const now = unixNow();
     const funding = await mintLocked(100, now + 120);
@@ -193,17 +200,14 @@ describe('custody against Nutshell FakeWallet', () => {
     const recipient = new Wallet(INVOICE_MINT_URL, { unit: 'sat' });
     await recipient.loadMint();
     const funding = await mintLocked(100, now + 120);
-    const externalInvoices = INVOICE_MINT_URL !== MINT_URL;
-    const networkCost = funding.inputFee + (externalInvoices ? 5 : 1);
+    const networkCost = funding.inputFee + 5;
     const expectedPayout = 100 - 3 - networkCost;
     const invoiceQuote = await recipient.createMintQuoteBolt11(expectedPayout);
     const operatorFeeWallet = new Wallet(INVOICE_MINT_URL, { unit: 'sat' });
     await operatorFeeWallet.loadMint();
-    let operatorFeeQuote:
-      Awaited<ReturnType<Wallet['createMintQuoteBolt11']>> | undefined;
     const invoiceSource = {
       async createInvoice(_address: string, amountSats: number) {
-        operatorFeeQuote =
+        const operatorFeeQuote =
           await operatorFeeWallet.createMintQuoteBolt11(amountSats);
         return operatorFeeQuote.request;
       },
@@ -231,34 +235,18 @@ describe('custody against Nutshell FakeWallet', () => {
     });
     expect(settled.status).toBe('settled');
     expect(settled.operatorFeeSats).toBe(3);
-    if (externalInvoices) {
-      expect(settled.overageToken).toBeDefined();
-      const overageWallet = new Wallet(MINT_URL, { unit: 'sat' });
-      await overageWallet.loadMint();
-      const overage = sumProofs(
-        overageWallet.decodeToken(settled.overageToken!).proofs
-      ).toNumber();
-      expect(overage).toBeGreaterThan(0);
-      expect(settled.payoutSats).toBe(expectedPayout + overage);
-    }
-    const paidProofs = await recipient.mintProofsBolt11(
-      expectedPayout,
-      invoiceQuote
+    expect(await mint.states(funding.token)).toEqual(
+      funding.states.map(() => 'spent')
     );
-    expect(sumProofs(paidProofs).toNumber()).toBe(expectedPayout);
-    expect(operatorFeeQuote).toBeDefined();
-    const feeProofs = await operatorFeeWallet.mintProofsBolt11(
-      3,
-      operatorFeeQuote!
-    );
-    expect(sumProofs(feeProofs).toNumber()).toBe(3);
+    expect(await overageAmount(settled)).toBe(2);
+    expect(settled.payoutSats).toBe(expectedPayout + 2);
   });
 
   it('recovers a paid Lightning melt after a crash before the terminal append', async () => {
     const now = unixNow();
     const funding = await mintLocked(100, now + 120);
     const policy = { ...basePolicy, feesEnabled: false };
-    const networkCost = funding.inputFee + 1;
+    const networkCost = funding.inputFee + 3;
     const amounts = settlementAmounts(100, networkCost, policy);
     const recipient = new Wallet(INVOICE_MINT_URL, { unit: 'sat' });
     await recipient.loadMint();
@@ -286,9 +274,15 @@ describe('custody against Nutshell FakeWallet', () => {
         now,
       })
     ).rejects.toThrow(/simulated crash/);
-    expect(await store.get('recover-melt')).toMatchObject({
-      status: 'spending',
-    });
+    const intent = (await store.get('recover-melt'))?.spend;
+    if (intent?.kind !== 'settlement_bolt11_recipient') {
+      throw new Error('recipient melt intent is missing');
+    }
+    const payingWallet = new Wallet(MINT_URL, { unit: 'sat' });
+    const paidQuote = await payingWallet.checkMeltQuoteBolt11(
+      intent.prepared.quote.id
+    );
+    expect(paidQuote.state).toBe(MeltQuoteState.PAID);
 
     const restarted = new CustodyEngine({
       mint,
@@ -298,21 +292,11 @@ describe('custody against Nutshell FakeWallet', () => {
     });
     await restarted.reconcile(now + 1);
     const recovered = await store.get('recover-melt');
-    expect(recovered).toMatchObject({ status: 'settled' });
-    let overage = 0;
-    if (recovered?.overageToken !== undefined) {
-      const overageWallet = new Wallet(MINT_URL, { unit: 'sat' });
-      await overageWallet.loadMint();
-      overage = sumProofs(
-        overageWallet.decodeToken(recovered.overageToken).proofs
-      ).toNumber();
-    }
-    expect(recovered?.payoutSats).toBe(amounts.payoutSats + overage);
-    const paidProofs = await recipient.mintProofsBolt11(
-      amounts.payoutSats,
-      invoiceQuote
-    );
-    expect(sumProofs(paidProofs).toNumber()).toBe(amounts.payoutSats);
+    expect(recovered).toMatchObject({
+      status: 'settled',
+      payoutSats: amounts.payoutSats + 2,
+    });
+    expect(await overageAmount(recovered)).toBe(2);
   });
 
   it('exposes the original token after expiry and records provider self-spend without attribution', async () => {
@@ -360,14 +344,17 @@ describe('custody against Nutshell FakeWallet', () => {
       funding.inputFee,
       8
     );
-    await delay(1_500);
+    const cutoff = funding.locktime - policy.releaseSafetyMarginSeconds;
+    await expect.poll(unixNow, { timeout: 5_000 }).toBeGreaterThan(cutoff);
     await expect(
-      engine.settle({
-        coordinationId: 'late',
-        payout: { type: 'cashu_p2pk', recipientPubkey: CUSTOMER.pubkey },
-        amounts,
-        now: unixNow(),
-      })
+      engine
+        .settle({
+          coordinationId: 'late',
+          payout: { type: 'cashu_p2pk', recipientPubkey: CUSTOMER.pubkey },
+          amounts,
+          now: unixNow(),
+        })
+        .then((record) => record.status)
     ).rejects.toThrow(/window/);
 
     const prepared = await mint.prepareP2pkSpend({
@@ -385,7 +372,11 @@ async function mintLocked(gross: number, locktime: number) {
   const wallet = new Wallet(MINT_URL, { unit: 'sat' });
   await wallet.loadMint();
   const quote = await wallet.createMintQuoteBolt11(gross);
-  await delay(2_200);
+  await expect
+    .poll(async () => (await wallet.checkMintQuoteBolt11(quote)).state, {
+      timeout: 10_000,
+    })
+    .toBe(MintQuoteState.PAID);
   const proofs = await wallet.ops
     .mintBolt11(gross, quote)
     .asP2PK({
@@ -472,6 +463,17 @@ async function receiveP2pk(token: string, privateKey: string): Promise<number> {
     .privkey(privateKey)
     .run();
   return sumProofs(proofs).toNumber();
+}
+
+async function overageAmount(
+  record: CustodyRecord | undefined
+): Promise<number> {
+  if (record?.overageToken === undefined) {
+    throw new Error('Lightning overage token is missing');
+  }
+  const wallet = new Wallet(MINT_URL, { unit: 'sat' });
+  await wallet.loadMint();
+  return sumProofs(wallet.decodeToken(record.overageToken).proofs).toNumber();
 }
 
 function tokenInputFee(token: string): number {

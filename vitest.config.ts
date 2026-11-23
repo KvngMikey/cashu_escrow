@@ -1,8 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 // Two projects, selected by name. The default run is unit-only: no network,
-// no Docker. The integration project is opt-in and expects a
-// local relay and a local Nutshell mint.
+// no Docker. The integration project is opt-in and uses local CDK mints.
 export default defineConfig({
   test: {
     projects: [

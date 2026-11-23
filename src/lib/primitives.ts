@@ -80,8 +80,7 @@ export function isLoopbackHost(hostname: string): boolean {
 }
 
 /**
- * Service and mint URLs. HTTPS anywhere; plain HTTP only to loopback, where a
- * local Nutshell lives and nothing crosses a wire.
+ * Service and mint URLs. HTTPS anywhere; plain HTTP only to loopback.
  */
 export const HttpUrl = z.string().refine((value) => {
   const url = parseUrl(value);

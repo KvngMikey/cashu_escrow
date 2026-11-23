@@ -19,7 +19,8 @@ independent cross-implementation validation remain later milestones.
 
 ## Quickstart
 
-Requires Node 22, Docker, a local Nostr relay and a local Nutshell mint.
+Requires Node 22 and Docker Compose. The local stack uses a Nostr relay and
+Cashu Development Kit (CDK) `mintd` with FakeWallet.
 
 ```bash
 nvm use
@@ -30,8 +31,9 @@ cp .env.example .env
 Set distinct valid `OPERATOR_NSEC` and `RESOLVER_NSEC` values in `.env`. For
 local operation, also set `NOSTR_RELAYS=ws://127.0.0.1:17000` and
 `SERVICE_BASE_URL=http://127.0.0.1:3000` so the operator uses the local relay
-and verifies NIP-98 requests against the local HTTP origin. Start the local
-services shown below, then verify the implementation and run the operator:
+and verifies NIP-98 requests against the local HTTP origin. Keep the example's
+`MINT_URL=http://127.0.0.1:3338` and `QUOTE_NETWORK_COST_SATS=1` for the
+100-sat Cashu smoke flow. Start the [local services](#local-services), then run:
 
 ```bash
 npm run typecheck
@@ -61,7 +63,7 @@ npm run build
 ```
 
 `npm test` runs local unit tests with synthetic identities and an in-memory
-relay. The integration suite exercises custody against a local Nutshell mint.
+relay. The integration suite exercises custody against local CDK mints.
 
 The configured mint must advertise NUT-07 through NUT-12. NUT-08 melt-change
 outputs and NUT-09 restoration make an interrupted spend recoverable from the
@@ -82,20 +84,20 @@ tests, production events, or proof of independent interoperability.
 
 ### Local services
 
-A local relay and a local mint, for development and the integration suite:
+A local relay and two pinned CDK 0.18.3 mints for development and testing:
 
 ```bash
-# relay
-docker run -p 17000:8080 scsibug/nostr-rs-relay
-
-# mint (Nutshell, fake Lightning backend)
-docker run -d -p 3338:3338 \
-  -e MINT_BACKEND_BOLT11_SAT=FakeWallet \
-  -e MINT_LISTEN_HOST=0.0.0.0 \
-  -e MINT_LISTEN_PORT=3338 \
-  -e MINT_PRIVATE_KEY=TEST_PRIVATE_KEY \
-  cashubtc/nutshell:latest poetry run mint
+docker compose up -d
+curl --retry 10 --retry-connrefused -fsS http://127.0.0.1:3338/v1/info
+curl --retry 10 --retry-connrefused -fsS http://127.0.0.1:3339/v1/info
 ```
+
+Port `3338` is the custody mint. The mint on `3339` supplies independent
+BOLT11 invoices so the custody mint exercises outgoing payments through CDK's
+FakeWallet. Both mints use test funds and initialize their own Docker volumes
+on first start. The relay listens on `17000`. Stop the stack with
+`docker compose stop` to keep the local mint data. If an earlier local stack
+already binds these ports, stop it before starting Compose.
 
 ## Scripts
 
@@ -110,6 +112,7 @@ docker run -d -p 3338:3338 \
 | `npm run operator`                      | run the watcher and private HTTP service                       |
 | `npm run resolve`                       | publish a resolver-authorized dispute effect                   |
 | `npm run smoke`                         | run escrow coordination flows against the local relay and mint |
+| `npm run smoke:pontswap-v2`             | settle and redeem test ecash through a running local operator  |
 | `npm run vectors:build`                 | regenerate the deterministic JSON fixtures                     |
 | `npm run publish:descriptor`            | publish and verify the escrow descriptor                       |
 | `npm run publish:agent`                 | publish and verify the Agent definition                        |
@@ -123,9 +126,11 @@ Run `npm run resolve -- --coordination <id> --effect <effect> --policy <id>`
 to publish a resolver command. Valid effects are `resume`,
 `authorize_settlement`, `authorize_refund`, and `cancel`.
 
-The smoke command uses `ws://127.0.0.1:17000` and
-`http://127.0.0.1:3338` by default. Override them with `TEST_RELAY_URL` and
-`TEST_MINT_URL` when the local services use different addresses.
+The smoke command defaults to `ws://127.0.0.1:17000` for the relay and
+`http://127.0.0.1:3338` for the custody mint. To use a different local stack, set
+`TEST_RELAY_URL`, `TEST_MINT_URL`, and `TEST_INVOICE_MINT_URL` as needed. The
+invoice mint defaults to `http://127.0.0.1:3339`. Run
+`npm run smoke:pontswap-v2` in another terminal after the operator is ready.
 
 `npm run operator` initializes the configured mint, publishes and verifies the
 discovery events, replays known coordinations, resumes the encrypted NIP-59
@@ -163,7 +168,7 @@ event until Pontmore defines shared timestamp or relay evidence for deadlines.
 
 - [Pontmore PIP-00, PIP-01, PIP-02 and swap profile](https://github.com/pontmore/protocol)
 - [Cashu client](https://github.com/cashubtc/cashu-ts)
-- [Nutshell mint](https://github.com/cashubtc/nutshell)
+- [Cashu Development Kit mint](https://github.com/cashubtc/cdk/tree/v0.18.3/crates/cdk-mintd)
 
 ## License
 
